@@ -1,0 +1,10 @@
+helpers/
+Dockerfile
+*.pyc
+*.pyo
+*.pyd
+*.md
+*.sh
+__pycache__
+.pytest_cache
+.env
