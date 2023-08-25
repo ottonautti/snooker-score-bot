@@ -36,21 +36,21 @@ class SnookerScoresSheet(gspread.Spreadsheet):
             return RuntimeError("No players found in spreadsheet")
         return [SnookerPlayer(*plr) for plr in players_values]
 
-    def record_match(self, match: dict, sender=None):
+    def record_match(self, values: dict, sender=None):
         """Record match to spreadsheet"""
         ws = self.worksheet("results")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        date_days_since_1900 = (match.get("date") - datetime(1899, 12, 30).date()).days
+        date_days_since_1900 = (values.get("date") - datetime(1899, 12, 30).date()).days
         ordered_values = [
-            r"\r".join([timestamp, str(sender), match["passage"]]),
-            match["group"],
-            match["player1"],
-            match["player2"],
-            match["player1_score"],
-            match["player2_score"],
-            match["winner"],
-            match["highest_break"],
-            match["break_owner"],
+            r"\r".join([timestamp, str(sender), values["passage"]]),
+            values["group"],
+            values["player1"],
+            values["player2"],
+            values["player1_score"],
+            values["player2_score"],
+            values["winner"],
+            values["highest_break"],
+            values["break_owner"],
             date_days_since_1900,
         ]
         ws.append_row(ordered_values)

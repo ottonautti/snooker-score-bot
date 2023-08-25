@@ -9,7 +9,7 @@ from langchain import LLMChain
 from langchain.llms import OpenAI, VertexAI
 from pydantic import ValidationError
 
-from .models import SnookerPlayer, get_model
+from .models import SnookerMatch, SnookerPlayer, get_model
 from .prompts import prompt_template
 
 
@@ -42,7 +42,7 @@ class SnookerScoresLLM:
         return "\n".join(map(str, self.players))
 
 
-    def infer_match(self, passage: str):
+    def infer_match(self, passage: str) -> SnookerMatch:
         """Extracts scores from input"""
         match_obj = {"passage": passage}
         llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose)

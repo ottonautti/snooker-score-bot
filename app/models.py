@@ -1,8 +1,26 @@
 import datetime
-from typing import Optional
+from typing import Optional, Literal, Union
 
 from pydantic import BaseModel, create_model, root_validator, validator
 from pydantic.fields import Field
+
+class EngMessages:
+    RESULT_WIN = "{winner} won {loser} by {winner_score} frames to {loser_score}"
+    RESULT_DRAW = "Match between {player1} and {player2} ended in a draw at {equal_score} frames each."
+    SCORELINE = "{winner} won {loser} by {} frames to {}."
+    BREAK = "(highest break {highest_break} by {break_owner})"
+
+class FinMessages:
+    RESULT_WIN = "{winner} voitti {loser} {winner_score} - {loser_score}"
+    RESULT_DRAW = "Ottelu {player1} - {player2} päättyi tasapeliin {equal_score} - {equal_score}."
+    SCORELINE = "{winner} voitti {loser} {winner_score} - {loser_score}."
+    BREAK = "(korkein breikki {highest_break}, {break_owner})"
+
+def get_messages(lang: Literal["fin", "eng"]) -> Union[FinMessages, EngMessages]:
+    if lang.lower() == "fin":
+        return FinMessages
+    else:
+        return EngMessages
 
 
 class SnookerPlayer:
@@ -32,9 +50,6 @@ class SnookerMatch(BaseModel):
     break_owner: Optional[str]
 
     _valid_players: list[SnookerPlayer] = []
-
-    class Config:
-        extra = "allow"  # for passing `passage`
 
     @validator("break_owner", always=True)
     def valid_highest_break(cls, name, values):
@@ -75,20 +90,35 @@ class SnookerMatch(BaseModel):
 
         return values
 
-    @property
-    def summary(self):
+    def summary(self, lang="eng"):
         """Returns a string representation of the match e.g. "Ahonen Otto won Vainikka Olli 3-0 (break 45, Ahonen Otto)"""
         loser = self.player1 if self.winner == self.player2 else self.player2
         winner_score = self.player1_score if self.winner == self.player1 else self.player2_score
         loser_score = self.player1_score if self.winner == self.player2 else self.player2_score
 
-        if winner_score == loser_score:
-            return f"Match between {self.player1} and {self.player2} ended in a draw at {winner_score} frames each."
-        else:
-            scoreline_str = f"{self.winner} won {loser} by {winner_score} frames to {loser_score}"
-        break_str = f" (highest break {self.highest_break}, {self.break_owner})" if self.highest_break else "."
-        return scoreline_str + break_str
+        messages = get_messages(lang)
 
+        if winner_score == loser_score:
+            result = messages.RESULT_DRAW.format(
+                player1=self.player1,
+                player2=self.player2,
+                equal_score=self.player1_score,
+            )
+        else:
+            result = messages.RESULT_WIN.format(
+                winner=self.winner,
+                loser=loser,
+                winner_score=winner_score,
+                loser_score=loser_score,
+            )
+        break_ = ""
+        if self.highest_break:
+            break_ += " " + messages.BREAK.format(
+                highest_break=self.highest_break,
+                break_owner=self.break_owner,
+            )
+
+        return result + break_
 
 def get_model(valid_players):
     return create_model(
