@@ -28,6 +28,12 @@ class SnookerScoresSheet(gspread.Spreadsheet):
         self.client = gspread.authorize(credentials)
         super().__init__(self.client, {"id": spreadsheet_id})
 
+    def _unhide_all_columns(self, ws: gspread.Worksheet):
+        """Unhide all columns in worksheet.
+
+        This is necessary for data entry to work."""
+        ws.unhide_columns(0, 20)
+
     def get_current_players(self) -> list[SnookerPlayer]:
         """Get list of current players from spreadsheet."""
         players_get = self.values_get(self.named_ranges["players"])
@@ -39,6 +45,7 @@ class SnookerScoresSheet(gspread.Spreadsheet):
     def record_match(self, values: dict, sender=None):
         """Record match to spreadsheet"""
         ws = self.worksheet("results")
+        self._unhide_all_columns(ws)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         date_days_since_1900 = (values.get("date") - datetime(1899, 12, 30).date()).days
         ordered_values = [
