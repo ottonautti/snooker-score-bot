@@ -13,5 +13,3 @@ class Twilio:
         self.client.messages.create(from_=self.from_number, to=to, body=body)
 
 TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender"])
-
-

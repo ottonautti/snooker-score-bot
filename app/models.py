@@ -7,13 +7,11 @@ from pydantic.fields import Field
 class EngMessages:
     RESULT_WIN = "{winner} won {loser} by {winner_score} frames to {loser_score}"
     RESULT_DRAW = "Match between {player1} and {player2} ended in a draw at {equal_score} frames each."
-    SCORELINE = "{winner} won {loser} by {} frames to {}."
     BREAK = "(highest break {highest_break} by {break_owner})"
 
 class FinMessages:
-    RESULT_WIN = "{winner} voitti {loser} {winner_score} - {loser_score}"
+    RESULT_WIN = "{winner} voitti vastustajan {loser} {winner_score} - {loser_score}"
     RESULT_DRAW = "Ottelu {player1} - {player2} päättyi tasapeliin {equal_score} - {equal_score}."
-    SCORELINE = "{winner} voitti {loser} {winner_score} - {loser_score}."
     BREAK = "(korkein breikki {highest_break}, {break_owner})"
 
 def get_messages(lang: Literal["fin", "eng"]) -> Union[FinMessages, EngMessages]:
