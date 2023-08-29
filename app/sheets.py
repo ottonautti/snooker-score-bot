@@ -12,7 +12,7 @@ CURDIR = os.path.dirname(os.path.abspath(__file__))
 DATE_FORMAT = "%d.%m.%Y"
 
 
-class SnookerScoresSheet(gspread.Spreadsheet):
+class SnookerSheet(gspread.Spreadsheet):
     named_ranges = {
         "players": "nr_currentPlayers",
     }
@@ -67,5 +67,5 @@ class SnookerScoresSheet(gspread.Spreadsheet):
 
 
 if __name__ == "__main__":
-    sheet = SnookerScoresSheet(os.environ["GOOGLESHEETS_SHEETID"])
+    sheet = SnookerSheet(os.environ["GOOGLESHEETS_SHEETID"])
     print([str(plr) for plr in sheet.get_current_players()])

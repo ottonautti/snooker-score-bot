@@ -9,8 +9,8 @@ from langchain import LLMChain
 from langchain.llms import OpenAI, VertexAI
 from pydantic import ValidationError
 
-from .models import SnookerMatch, SnookerPlayer, get_model
-from .prompts import prompt_template
+from . import prompts
+from ..models import SnookerMatch, SnookerPlayer, get_model
 
 
 class SnookerScoresLLM:
@@ -25,7 +25,7 @@ class SnookerScoresLLM:
         self,
         players: list[SnookerPlayer],
         llm: Literal["openai", "vertexai"] = "openai",
-        prompt=prompt_template,
+        prompt=prompts.get_prompt(),
     ):
         self.llm = self.llms[llm]()
         self.prompt = prompt
@@ -40,7 +40,6 @@ class SnookerScoresLLM:
     def player_names_and_groups(self):
         """Returns a text represenation of player names and groups."""
         return "\n".join(map(str, self.players))
-
 
     def infer_match(self, passage: str) -> SnookerMatch:
         """Extracts scores from input"""
