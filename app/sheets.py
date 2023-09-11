@@ -18,7 +18,6 @@ class SnookerSheet(gspread.Spreadsheet):
     }
 
     def __init__(self, spreadsheet_id: str):
-        # self.client = gspread.service_account(filename=os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")),
         credentials, project_id = google.auth.default(
         scopes=[
                 'https://spreadsheets.google.com/feeds',

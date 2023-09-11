@@ -2,3 +2,4 @@ python-dotenv
 pytest
 pytest-httpx
 pytest-dotenv
+freezegun

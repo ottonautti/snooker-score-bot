@@ -5,8 +5,6 @@ import logging
 from langchain.prompts.few_shot_with_templates import FewShotPromptWithTemplates
 from langchain.prompts.prompt import PromptTemplate
 
-from ..models import SnookerPlayer
-
 try:
     from . import fewshots_groove
     few_shot_data = fewshots_groove.GrooveFewShotData()
@@ -14,6 +12,7 @@ except ImportError:
     logging.warning("Could not import real player names, using fake few-shot data instead.")
     from . import fewshots_mock
     few_shot_data = fewshots_mock.MockFewShotData()
+
 
 
 def get_prompt():
@@ -26,7 +25,8 @@ def get_prompt():
     The passage should only ever contain information pertaining to existing players. Below is a list of full names of
     existing players and their associated groups. Only ever return names of players that are included in the list of
     existing players. Only ever return names as they appear in the list of existing players. Players belong to different
-    groups. A match should only ever be between players in the same group.
+    groups. A match should only ever be between players in the same group. If there is a player with the same name in a
+    different group, assume that the player in the passage is the one in the same group as the other player in the match.
 
     If a break is not explicitly mentioned in the passage, return null values for the `highest_break` and `break_owner`.
     """

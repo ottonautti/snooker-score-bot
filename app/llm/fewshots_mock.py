@@ -9,18 +9,22 @@ to_json = partial(json.dumps, ensure_ascii=False)
 
 class MockFewShotData(FewShotData):
     players = [
+        # Group 1
         SnookerPlayer(name="Huhtala Katja", group=1),
         SnookerPlayer(name="Andersson Leila", group=1),
         SnookerPlayer(name="Huuskonen Alexandra", group=1),
         SnookerPlayer(name="Suhonen Tanja", group=1),
+        # Group 2
         SnookerPlayer(name="Laaksonen Sinikka", group=2),
-        SnookerPlayer(name="Tuomi Joonas", group=2),
+        SnookerPlayer(name="Tuomi Kari", group=2),
         SnookerPlayer(name="Jauhiainen Mari", group=2),
         SnookerPlayer(name="Lankinen Elisabet", group=2),
+        # Group 3
         SnookerPlayer(name="Lahti Mika", group=3),
-        SnookerPlayer(name="Väisänen Yrjö", group=3),
+        SnookerPlayer(name="Kari Yrjö", group=3),
         SnookerPlayer(name="Sjöblom Aukusti", group=3),
         SnookerPlayer(name="Kivinen Jarmo", group=3),
+        # Group 4
         SnookerPlayer(name="Tähtinen Anneli", group=4),
         SnookerPlayer(name="Saarela Tero", group=4),
         SnookerPlayer(name="Pulkkinen Valtteri", group=4),

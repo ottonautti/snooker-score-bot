@@ -1,18 +1,21 @@
 import datetime
-from typing import Optional, Literal, Union
+from typing import Literal, Optional, Union
 
 from pydantic import BaseModel, create_model, root_validator, validator
 from pydantic.fields import Field
+
 
 class EngMessages:
     RESULT_WIN = "{winner} won {loser} by {winner_score} frames to {loser_score}"
     RESULT_DRAW = "Match between {player1} and {player2} ended in a draw at {equal_score} frames each."
     BREAK = "(highest break {highest_break} by {break_owner})"
 
+
 class FinMessages:
     RESULT_WIN = "{winner} voitti vastustajan {loser} {winner_score} - {loser_score}"
     RESULT_DRAW = "Ottelu {player1} - {player2} päättyi tasapeliin {equal_score} - {equal_score}."
     BREAK = "(korkein breikki {highest_break}, {break_owner})"
+
 
 def get_messages(lang: Literal["fin", "eng"]) -> Union[FinMessages, EngMessages]:
     if lang.lower() == "fin":
@@ -40,14 +43,15 @@ class SnookerMatch(BaseModel):
     group: str
     player1: str
     player2: str
-    player1_score: int = Field(ge=0, le=3)
-    player2_score: int = Field(ge=0, le=3)
+    player1_score: int
+    player2_score: int
     winner: Optional[str]
 
     highest_break: Optional[int]
     break_owner: Optional[str]
 
     _valid_players: list[SnookerPlayer] = []
+    _max_score: int = 2
 
     @validator("break_owner", always=True)
     def valid_highest_break(cls, name, values):
@@ -67,6 +71,13 @@ class SnookerMatch(BaseModel):
         if values.get("player1_score") > values.get("player2_score"):
             return values.get("player1")
         return values.get("player2")
+
+    @validator("player1_score", "player2_score")
+    def valid_score(cls, score, values):
+        """Scores must be between 0 and max_score"""
+        assert score >= 0, "score must be greater than or equal to 0"
+        assert score <= cls._max_score, f"score must be less than or equal to {cls._max_score}"
+        return score
 
     @root_validator
     def check_players(cls, values):
@@ -118,9 +129,12 @@ class SnookerMatch(BaseModel):
 
         return result + break_
 
-def get_model(valid_players):
-    return create_model(
-        "SnookerMatch",
-        __base__=SnookerMatch,
-        _valid_players=valid_players,
-    )
+    @classmethod
+    def get_model(cls, valid_players: list[SnookerPlayer], _max_score: Optional[int] = None):
+        """Returns a SnookerMatch model with valid players set as a class attribute at runtime."""
+        return create_model(
+            cls.__name__,
+            __base__=cls,
+            _valid_players=valid_players,
+            _max_score=_max_score,
+        )

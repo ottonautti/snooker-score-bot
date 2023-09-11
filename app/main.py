@@ -16,6 +16,9 @@ from .models import SnookerMatch
 from .sheets import SnookerSheet
 from .twilio_client import Twilio, TwilioInboundMessage
 
+# Matches are best of 3
+MAX_SCORE = 2
+
 
 def setup_logging():
     """Sets up logging for the app"""
@@ -30,7 +33,7 @@ def setup_logging():
 SHEET_ID = os.environ.get("GOOGLESHEETS_SHEETID")
 TWILIO = Twilio()
 SHEET = SnookerSheet(SHEET_ID)
-LLM = SnookerScoresLLM(players=SHEET.get_current_players())
+LLM = SnookerScoresLLM(players_getter=SHEET.get_current_players)
 
 OPENAI_APIKEY = os.environ.get("OPENAI_APIKEY")
 MESSAGE_LANG = "fin"
@@ -57,15 +60,17 @@ async def handle_message(msg: TwilioInboundMessage = Depends(parse_twilio_msg)):
     """Handles inbound scores"""
     assert msg.body
     logging.info("Received message from %s: %s", msg.sender, msg.body)
+    model = SnookerMatch.get_model(valid_players=SHEET.get_current_players(), _max_score=MAX_SCORE)
     try:
-        match: SnookerMatch = LLM.infer_match(msg.body)
+        output: dict = LLM.run(msg.body)
+        snooker_match = model(**output)
     except ValidationError as err:
         TWILIO.send_message(msg.sender, MESSAGES.REPLY_404)
         raise HTTPException(status_code=400, detail=err.errors()) from err
-    SHEET.record_match(values={**match.dict(), "passage": msg.body}, sender=msg.sender)
-    reply = MESSAGES.REPLY_201.format(match.summary(MESSAGE_LANG))
+    SHEET.record_match(values={**snooker_match.dict(), "passage": msg.body}, sender=msg.sender)
+    reply = MESSAGES.REPLY_201.format(snooker_match.summary(MESSAGE_LANG))
     TWILIO.send_message(msg.sender, reply)
-    content = {"status": "Match recorded", "match": jsonable_encoder(match)}
+    content = {"status": "Match recorded", "match": jsonable_encoder(snooker_match)}
     logging.info(json.dumps(content))
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=content)
 

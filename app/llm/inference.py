@@ -1,16 +1,14 @@
 """LLM interface."""
 
 import json
-import logging
 import os
 from typing import Literal
 
 from langchain import LLMChain
 from langchain.llms import OpenAI, VertexAI
-from pydantic import ValidationError
 
+from ..models import SnookerPlayer
 from . import prompts
-from ..models import SnookerMatch, SnookerPlayer, get_model
 
 
 class SnookerScoresLLM:
@@ -23,37 +21,33 @@ class SnookerScoresLLM:
 
     def __init__(
         self,
-        players: list[SnookerPlayer],
+        players_getter: callable,  # method that returns list of current players
         llm: Literal["openai", "vertexai"] = "openai",
-        prompt=prompts.get_prompt(),
+        prompt=None,
     ):
         self.llm = self.llms[llm]()
-        self.prompt = prompt
-        self.players = players
+        self.players_getter = players_getter
         self.verbose = bool(os.getenv("LANGCHAIN_VERBOSE", False))
+        if not prompt:
+            prompt = prompts.get_prompt()
+        self.prompt = prompt
 
     @property
-    def player_names(self):
-        return [plr.name for plr in self.players]
+    def players(self) -> list[SnookerPlayer]:
+        # get current players
+        return self.players_getter()
 
     @property
     def player_names_and_groups(self):
         """Returns a text represenation of player names and groups."""
         return "\n".join(map(str, self.players))
 
-    def infer_match(self, passage: str) -> SnookerMatch:
-        """Extracts scores from input"""
-        match_obj = {"passage": passage}
+    def run(self, passage: str) -> dict:
         llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose)
-        llm_output = llm_chain.run(existing_players=self.player_names_and_groups, passage=passage)
+        llm_output_raw = llm_chain.run(existing_players=self.player_names_and_groups, passage=passage)
         try:
-            llm_output_json = json.loads(llm_output) or {}
-            match_obj.update(llm_output_json)
+            llm_output = json.loads(llm_output_raw) or {}
+            output = {"passage": passage, **llm_output}
         except json.JSONDecodeError as e:
-            raise ValueError(f"Could not decode JSON: {llm_output}") from e
-        try:
-            sm = get_model(valid_players=self.players)(**match_obj)
-        except ValidationError as e:
-            logging.error(f"Could not validate match: {match_obj}")
-            raise
-        return sm
+            raise ValueError(f"LLM did not output valid JSON: {llm_output_raw}") from e
+        return output
