@@ -9,26 +9,22 @@ to_json = partial(json.dumps, ensure_ascii=False)
 
 class MockFewShotData(FewShotData):
     players = [
-        # Group 1
-        SnookerPlayer(name="Huhtala Katja", group=1),
-        SnookerPlayer(name="Andersson Leila", group=1),
-        SnookerPlayer(name="Huuskonen Alexandra", group=1),
-        SnookerPlayer(name="Suhonen Tanja", group=1),
-        # Group 2
-        SnookerPlayer(name="Laaksonen Sinikka", group=2),
-        SnookerPlayer(name="Tuomi Kari", group=2),
-        SnookerPlayer(name="Jauhiainen Mari", group=2),
-        SnookerPlayer(name="Lankinen Elisabet", group=2),
-        # Group 3
-        SnookerPlayer(name="Lahti Mika", group=3),
-        SnookerPlayer(name="Kari Yrjö", group=3),
-        SnookerPlayer(name="Sjöblom Aukusti", group=3),
-        SnookerPlayer(name="Kivinen Jarmo", group=3),
-        # Group 4
-        SnookerPlayer(name="Tähtinen Anneli", group=4),
-        SnookerPlayer(name="Saarela Tero", group=4),
-        SnookerPlayer(name="Pulkkinen Valtteri", group=4),
-        SnookerPlayer(name="Eskelinen Tapio", group=4),
+        SnookerPlayer("Huhtala Katja", "L1"),
+        SnookerPlayer("Andersson Leila", "L1"),
+        SnookerPlayer("Huuskonen Alexandra", "L1"),
+        SnookerPlayer("Suhonen Tanja", "L1"),
+        SnookerPlayer("Laaksonen Sinikka", "L2"),
+        SnookerPlayer("Tuomi Kari", "L2"),
+        SnookerPlayer("Jauhiainen Mari", "L2"),
+        SnookerPlayer("Lankinen Elisabet", "L2"),
+        SnookerPlayer("Lahti Mika", "L3"),
+        SnookerPlayer("Kari Yrjö", "L3"),
+        SnookerPlayer("Sjöblom Aukusti", "L3"),
+        SnookerPlayer("Kivinen Jarmo", "L3"),
+        SnookerPlayer("Tähtinen Anneli", "L4"),
+        SnookerPlayer("Saarela Tero", "L4"),
+        SnookerPlayer("Pulkkinen Valtteri", "L4"),
+        SnookerPlayer("Eskelinen Tapio", "L4"),
     ]
 
     @property
@@ -39,7 +35,7 @@ class MockFewShotData(FewShotData):
                 "passage": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
                 "output": to_json(
                     {
-                        "group": "1",
+                        "group": "L1",
                         "player1": "Huhtala Katja",
                         "player2": "Andersson Leila",
                         "player1_score": 2,
@@ -55,7 +51,7 @@ class MockFewShotData(FewShotData):
                 "passage": "Sinikka - Joonas 2-0",
                 "output": to_json(
                     {
-                        "group": "2",
+                        "group": "L2",
                         "player1": "Laaksonen Sinikka",
                         "player2": "Tuomi Joonas",
                         "player1_score": 2,
@@ -71,7 +67,7 @@ class MockFewShotData(FewShotData):
                 "passage": "Aukusti v Yrjö 2-1 Highest break: Aukusti - 18",
                 "output": to_json(
                     {
-                        "group": "3",
+                        "group": "L3",
                         "player1": "Sjöblom Aukusti",
                         "player2": "Väisänen Yrjö",
                         "player1_score": 2,
@@ -87,7 +83,7 @@ class MockFewShotData(FewShotData):
                 "passage": "Anneli 2 - Tero 1, ei breikkejä",
                 "output": to_json(
                     {
-                        "group": "4",
+                        "group": "L4",
                         "player1": "Tähtinen Anneli",
                         "player2": "Saarela Tero",
                         "player1_score": 2,

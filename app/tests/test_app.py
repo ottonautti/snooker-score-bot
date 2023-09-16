@@ -15,7 +15,7 @@ def test_successful_request(test_client_with_mocks, mock_llm):
     LLM is mocked to return a mock match."""
     # Arrange
     mock_match = SnookerMatch.construct(  # skips validation
-        group="1",
+        group="L1",
         player1="Huhtala Katja",
         player2="Andersson Leila",
         player1_score=2,
@@ -38,7 +38,7 @@ def test_successful_request(test_client_with_mocks, mock_llm):
         "status": "Match recorded",
         "match": {
             "date": "2023-09-11",
-            "group": "1",
+            "group": "L1",
             "player1": "Huhtala Katja",
             "player2": "Andersson Leila",
             "player1_score": 2,
