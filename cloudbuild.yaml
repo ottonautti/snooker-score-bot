@@ -22,7 +22,7 @@ steps:
       - --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$COMMIT_SHA,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
       - '--region=$_DEPLOY_REGION'
       - '--set-env-vars=NODE_ENV=production'
-      - '--set-secrets=TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,GOOGLESHEETS_SHEETID=googlesheets-sheetid:latest'
+      - '--set-secrets=OPENAI_API_KEY=openai-api-key:latest,TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,GOOGLESHEETS_SHEETID=googlesheets-sheetid:latest'
       - '--service-account=$_SERVICE_ACCOUNT'
       - '--max-instances=1'
       - '--quiet'
