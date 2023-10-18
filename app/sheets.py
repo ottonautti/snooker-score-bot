@@ -11,21 +11,26 @@ from .models import SnookerPlayer
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 DATE_FORMAT = "%d.%m.%Y"
 
-
 class SnookerSheet(gspread.Spreadsheet):
+    results_sheet_name = "_results"
     named_ranges = {
         "players": "nr_currentPlayers",
     }
 
     def __init__(self, spreadsheet_id: str):
         credentials, project_id = google.auth.default(
-        scopes=[
-                'https://spreadsheets.google.com/feeds',
-                'https://www.googleapis.com/auth/drive'
-            ]
+            scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         )
         self.client = gspread.authorize(credentials)
         super().__init__(self.client, {"id": spreadsheet_id})
+
+        # check that expected named ranges exist
+        for name in self.named_ranges.values():
+            if not name in [nr["name"] for nr in self.list_named_ranges()]:
+                raise RuntimeError(f"Named range {name} not found in spreadsheet")
+
+        # check that expected sheets exist
+        self.results_sheet = self.worksheet(self.results_sheet_name)
 
     def _unhide_all_columns(self, ws: gspread.Worksheet):
         """Unhide all columns in worksheet.
@@ -35,16 +40,18 @@ class SnookerSheet(gspread.Spreadsheet):
 
     def get_current_players(self) -> list[SnookerPlayer]:
         """Get list of current players from spreadsheet."""
-        players_get = self.values_get(self.named_ranges["players"])
-        players_values = players_get.get("values", [])
-        if not players_values:
+        players_rows = self.values_get(self.named_ranges["players"]).get("values")
+        if not players_rows:
             return RuntimeError("No players found in spreadsheet")
-        return [SnookerPlayer(*plr) for plr in players_values]
+        return [SnookerPlayer(name=plr[0], group=plr[1]) for plr in players_rows]
+
+    @property
+    def players(self) -> list[SnookerPlayer]:
+        return self.get_current_players()
 
     def record_match(self, values: dict, sender=None):
         """Record match to spreadsheet"""
-        ws = self.worksheet("results")
-        self._unhide_all_columns(ws)
+        self._unhide_all_columns(self.results_sheet)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         date_days_since_1900 = (values.get("date") - datetime(1899, 12, 30).date()).days
         ordered_values = [
@@ -59,10 +66,9 @@ class SnookerSheet(gspread.Spreadsheet):
             values["break_owner"],
             date_days_since_1900,
         ]
-        ws.append_row(ordered_values)
+        self.results_sheet.append_row(ordered_values)
 
         return True
-
 
 
 if __name__ == "__main__":

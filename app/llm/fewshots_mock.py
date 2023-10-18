@@ -9,22 +9,22 @@ to_json = partial(json.dumps, ensure_ascii=False)
 
 class MockFewShotData(FewShotData):
     players = [
-        SnookerPlayer("Huhtala Katja", "L1"),
-        SnookerPlayer("Andersson Leila", "L1"),
-        SnookerPlayer("Huuskonen Alexandra", "L1"),
-        SnookerPlayer("Suhonen Tanja", "L1"),
-        SnookerPlayer("Laaksonen Sinikka", "L2"),
-        SnookerPlayer("Tuomi Kari", "L2"),
-        SnookerPlayer("Jauhiainen Mari", "L2"),
-        SnookerPlayer("Lankinen Elisabet", "L2"),
-        SnookerPlayer("Lahti Mika", "L3"),
-        SnookerPlayer("Kari Yrjö", "L3"),
-        SnookerPlayer("Sjöblom Aukusti", "L3"),
-        SnookerPlayer("Kivinen Jarmo", "L3"),
-        SnookerPlayer("Tähtinen Anneli", "L4"),
-        SnookerPlayer("Saarela Tero", "L4"),
-        SnookerPlayer("Pulkkinen Valtteri", "L4"),
-        SnookerPlayer("Eskelinen Tapio", "L4"),
+        SnookerPlayer(name="Huhtala Katja", group="L1"),
+        SnookerPlayer(name="Andersson Leila", group="L1"),
+        SnookerPlayer(name="Huuskonen Alexandra", group="L1"),
+        SnookerPlayer(name="Suhonen Tanja", group="L1"),
+        SnookerPlayer(name="Laaksonen Sinikka", group="L2"),
+        SnookerPlayer(name="Tuomi Kari", group="L2"),
+        SnookerPlayer(name="Jauhiainen Mari", group="L2"),
+        SnookerPlayer(name="Lankinen Elisabet", group="L2"),
+        SnookerPlayer(name="Lahti Mika", group="L3"),
+        SnookerPlayer(name="Kari Yrjö", group="L3"),
+        SnookerPlayer(name="Sjöblom Aukusti", group="L3"),
+        SnookerPlayer(name="Kivinen Jarmo", group="L3"),
+        SnookerPlayer(name="Tähtinen Anneli", group="L4"),
+        SnookerPlayer(name="Saarela Tero", group="L4"),
+        SnookerPlayer(name="Pulkkinen Valtteri", group="L4"),
+        SnookerPlayer(name="Eskelinen Tapio", group="L4"),
     ]
 
     @property

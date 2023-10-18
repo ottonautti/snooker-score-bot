@@ -52,26 +52,26 @@ async def get_sheet():
     return SnookerSheet(sheet_id)
 
 
-async def get_players(sheet: SnookerSheet = Depends(get_sheet)) -> list[SnookerPlayer]:
-    return sheet.get_current_players()
+async def get_valid_players(sheet=Depends(get_sheet)):
+    return sheet.players
 
 
-async def get_llm(players: list[SnookerPlayer] = Depends(get_players)) -> SnookerScoresLLM:
-    return SnookerScoresLLM(players=players)
+async def get_llm(valid_players=Depends(get_valid_players)):
+    return SnookerScoresLLM(players=valid_players)
 
 
 @app.post("/scores")
-async def handle_message(
-    twilio: Twilio = Depends(get_twilio),
-    msg: TwilioInboundMessage = Depends(parse_twilio_msg),
+async def handle_score(
+    twilio=Depends(get_twilio),
+    msg=Depends(parse_twilio_msg),
     llm=Depends(get_llm),
     sheet=Depends(get_sheet),
-    players=Depends(get_players),
+    valid_players=Depends(get_valid_players),
 ):
     """Handles inbound scores"""
     assert msg.body
     logging.info("Received message from %s: %s", msg.sender, msg.body)
-    model = SnookerMatch.get_model(valid_players=players, _max_score=settings.MAX_SCORE)
+    model = SnookerMatch.get_model(valid_players=valid_players, max_score=settings.MAX_SCORE)
     try:
         output: dict = llm.run(msg.body)
         snooker_match = model(**output)

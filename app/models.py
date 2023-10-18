@@ -24,10 +24,9 @@ def get_messages(lang: Literal["fin", "eng"]) -> Union[FinMessages, EngMessages]
         return EngMessages
 
 
-class SnookerPlayer:
-    def __init__(self, name, group):
-        self.name = name
-        self.group = group
+class SnookerPlayer(BaseModel):
+    name: str
+    group: str
 
     def __repr__(self):
         return f"SnookerPlayer(name={self.name}, group={self.group})"
@@ -134,11 +133,11 @@ class SnookerMatch(BaseModel):
         return result + break_
 
     @classmethod
-    def get_model(cls, valid_players: list[SnookerPlayer], _max_score: Optional[int] = None):
+    def get_model(cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = None):
         """Returns a SnookerMatch model with valid players set as a class attribute at runtime."""
         return create_model(
             cls.__name__,
             __base__=cls,
             _valid_players=valid_players,
-            _max_score=_max_score,
+            _max_score=max_score,
         )
