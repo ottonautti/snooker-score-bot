@@ -99,8 +99,12 @@ class SnookerMatch(BaseModel):
 
         return values
 
-    def summary(self, lang="eng"):
-        """Returns a string representation of the match e.g. "Ahonen Otto won Vainikka Olli 3-0 (break 45, Ahonen Otto)"""
+    def summary(self, lang="eng") -> str:
+        """Returns a string representation of the match.
+
+        For example:
+            'Ahonen Otto won Vainikka Olli 3-0 (break 45, Ahonen Otto)'.
+        """
         loser = self.player1 if self.winner == self.player2 else self.player2
         winner_score = self.player1_score if self.winner == self.player1 else self.player2_score
         loser_score = self.player1_score if self.winner == self.player2 else self.player2_score

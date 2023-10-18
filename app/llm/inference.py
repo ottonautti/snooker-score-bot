@@ -21,21 +21,16 @@ class SnookerScoresLLM:
 
     def __init__(
         self,
-        players_getter: callable,  # method that returns list of current players
+        players: list[SnookerPlayer],  # list of valid players
         llm: Literal["openai", "vertexai"] = "openai",
         prompt=None,
     ):
         self.llm = self.llms[llm]()
-        self.players_getter = players_getter
+        self.players = players
         self.verbose = bool(os.getenv("LANGCHAIN_VERBOSE", False))
         if not prompt:
             prompt = prompts.get_prompt()
         self.prompt = prompt
-
-    @property
-    def players(self) -> list[SnookerPlayer]:
-        # get current players
-        return self.players_getter()
 
     @property
     def player_names_and_groups(self):
@@ -44,7 +39,7 @@ class SnookerScoresLLM:
 
     def run(self, passage: str) -> dict:
         llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose)
-        llm_output_raw = llm_chain.run(existing_players=self.player_names_and_groups, passage=passage)
+        llm_output_raw = llm_chain.run(valid_players=self.player_names_and_groups, passage=passage)
         try:
             llm_output = json.loads(llm_output_raw) or {}
             output = {"passage": passage, **llm_output}

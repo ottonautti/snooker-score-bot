@@ -1,8 +1,8 @@
 import json
 from functools import partial
 
-from . import FewShotData
 from ..models import SnookerPlayer
+from . import FewShotData
 
 to_json = partial(json.dumps, ensure_ascii=False)
 
@@ -31,7 +31,7 @@ class MockFewShotData(FewShotData):
     def examples(self):
         return [
             {
-                "existing_players": "\n".join([str(plr) for plr in self.players]),
+                "valid_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
                 "output": to_json(
                     {
@@ -47,7 +47,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "existing_players": "\n".join([str(plr) for plr in self.players]),
+                "valid_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Sinikka - Joonas 2-0",
                 "output": to_json(
                     {
@@ -63,7 +63,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "existing_players": "\n".join([str(plr) for plr in self.players]),
+                "valid_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Aukusti v Yrjö 2-1 Highest break: Aukusti - 18",
                 "output": to_json(
                     {
@@ -79,7 +79,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "existing_players": "\n".join([str(plr) for plr in self.players]),
+                "valid_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Anneli 2 - Tero 1, ei breikkejä",
                 "output": to_json(
                     {

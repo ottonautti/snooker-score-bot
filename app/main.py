@@ -11,13 +11,10 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from .llm.inference import SnookerScoresLLM
-from .messages import get_messages
-from .models import SnookerMatch
+from .models import SnookerMatch, SnookerPlayer
+from .settings import messages, settings
 from .sheets import SnookerSheet
 from .twilio_client import Twilio, TwilioInboundMessage
-
-# Matches are best of 3
-MAX_SCORE = 2
 
 
 def setup_logging():
@@ -29,15 +26,6 @@ def setup_logging():
         logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
         logging.getLogger().setLevel(logging.INFO)
 
-
-SHEET_ID = os.environ.get("GOOGLESHEETS_SHEETID")
-TWILIO = Twilio()
-SHEET = SnookerSheet(SHEET_ID)
-LLM = SnookerScoresLLM(players_getter=SHEET.get_current_players)
-
-OPENAI_APIKEY = os.environ.get("OPENAI_APIKEY")
-MESSAGE_LANG = "fin"
-MESSAGES = get_messages(MESSAGE_LANG)
 
 app = FastAPI()
 
@@ -55,21 +43,44 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     return TwilioInboundMessage(body=body, sender=sender)
 
 
+async def get_twilio():
+    return Twilio()
+
+
+async def get_sheet():
+    sheet_id = os.environ.get("GOOGLESHEETS_SHEETID")
+    return SnookerSheet(sheet_id)
+
+
+async def get_players(sheet: SnookerSheet = Depends(get_sheet)) -> list[SnookerPlayer]:
+    return sheet.get_current_players()
+
+
+async def get_llm(players: list[SnookerPlayer] = Depends(get_players)) -> SnookerScoresLLM:
+    return SnookerScoresLLM(players=players)
+
+
 @app.post("/scores")
-async def handle_message(msg: TwilioInboundMessage = Depends(parse_twilio_msg)):
+async def handle_message(
+    twilio: Twilio = Depends(get_twilio),
+    msg: TwilioInboundMessage = Depends(parse_twilio_msg),
+    llm=Depends(get_llm),
+    sheet=Depends(get_sheet),
+    players=Depends(get_players),
+):
     """Handles inbound scores"""
     assert msg.body
     logging.info("Received message from %s: %s", msg.sender, msg.body)
-    model = SnookerMatch.get_model(valid_players=SHEET.get_current_players(), _max_score=MAX_SCORE)
+    model = SnookerMatch.get_model(valid_players=players, _max_score=settings.MAX_SCORE)
     try:
-        output: dict = LLM.run(msg.body)
+        output: dict = llm.run(msg.body)
         snooker_match = model(**output)
     except ValidationError as err:
-        TWILIO.send_message(msg.sender, MESSAGES.REPLY_404)
+        twilio.send_message(msg.sender, messages.REPLY_404)
         raise HTTPException(status_code=400, detail=err.errors()) from err
-    SHEET.record_match(values={**snooker_match.dict(), "passage": msg.body}, sender=msg.sender)
-    reply = MESSAGES.REPLY_201.format(snooker_match.summary(MESSAGE_LANG))
-    TWILIO.send_message(msg.sender, reply)
+    sheet.record_match(values={**snooker_match.dict(), "passage": msg.body}, sender=msg.sender)
+    reply = messages.REPLY_201.format(snooker_match.summary(settings.APP_LANG))
+    twilio.send_message(msg.sender, reply)
     content = {"status": "Match recorded", "match": jsonable_encoder(snooker_match)}
     logging.info(json.dumps(content))
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=content)
