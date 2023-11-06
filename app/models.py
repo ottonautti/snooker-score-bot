@@ -1,7 +1,7 @@
 import datetime
-from typing import Literal, Optional, Union
+from typing import ClassVar, Literal, Optional, Union
 
-from pydantic import BaseModel, create_model, root_validator, validator
+from pydantic import BaseModel, computed_field, create_model, field_validator, model_validator
 from pydantic.fields import Field
 
 
@@ -44,59 +44,55 @@ class SnookerMatch(BaseModel):
     player2: str
     player1_score: int
     player2_score: int
-    winner: Optional[str]
 
-    highest_break: Optional[int]
-    break_owner: Optional[str]
+    highest_break: Optional[int] = None
+    break_owner: Optional[str] = None
 
-    _valid_players: list[SnookerPlayer] = []
-    _max_score: int = 2
+    valid_players: ClassVar[list[SnookerPlayer]]
+    max_score: ClassVar[int] = 2
 
-    @validator("break_owner", always=True)
-    def valid_highest_break(cls, name, values):
-        """Break owner must be one of the players,
-
-        If there is a break, there must be a break owner."""
-        if values["highest_break"]:
-            assert name in [values["player1"], values["player2"]], "break owner is not one of the match players."
-
-        return name
-
-    @validator("winner", always=True)
-    def set_winner(cls, v, values):
+    @computed_field
+    def winner(self) -> str:
         """Sets the winner based on scores"""
-        if values.get("player1_score") == values.get("player2_score"):
+        if self.player1_score == self.player2_score:
             return None
-        if values.get("player1_score") > values.get("player2_score"):
-            return values.get("player1")
-        return values.get("player2")
+        if self.player1_score > self.player2_score:
+            return self.player1
+        return self.player2
 
-    @validator("player1_score", "player2_score")
-    def valid_score(cls, score, values):
+    @field_validator("player1_score", "player2_score")
+    def valid_score(cls, score):
         """Scores must be between 0 and max_score"""
         assert score >= 0, "score must be greater than or equal to 0"
-        assert score <= cls._max_score, f"score must be less than or equal to {cls._max_score}"
+        assert score <= cls.max_score, f"score must be less than or equal to {cls.max_score}"
         return score
 
-    @root_validator
-    def check_players(cls, values):
-        """Players have to be from the same group.
-        Players can not be the same player."""
-        player1_match = next((plr for plr in cls._valid_players if plr.name == values.get("player1")), None)
-        player2_match = next((plr for plr in cls._valid_players if plr.name == values.get("player2")), None)
+    @model_validator(mode="after")
+    def check_players(self):
+        """Players have to belong to valid players. Players have to be from the same group. Players can not be the same player."""
+        # Find the player objects in the valid_players list
+        player1 = next((player for player in self.valid_players if player.name == self.player1), None)
+        player2 = next((player for player in self.valid_players if player.name == self.player2), None)
 
-        assert player1_match, f"Player {values.get('player1')} not found in valid players."
-        assert player2_match, f"Player {values.get('player2')} not found in valid players."
+        # Check that both players are in the list of valid players
+        assert player1 is not None, f"{self.player1} is not a valid player"
+        assert player2 is not None, f"{self.player2} is not a valid player"
 
-        assert (
-            player1_match.group == player2_match.group
-        ), f"Players {values.get('player1')} and {values.get('player2')} are not from the same group."
+        # Check that both players are from the same group
+        assert player1.group == player2.group, "Players are not from the same group"
 
-        assert values.get("player1") != values.get(
-            "player2"
-        ), f"Players {values.get('player1')} and {values.get('player2')} are the same player."
+        # Check that the two players are not the same
+        assert player1 != player2, "Players cannot be the same player"
 
-        return values
+        return self
+
+    @model_validator(mode="after")
+    def valid_highest_break(self):
+        """If there is a break, there must be a break owner. Break owner must be one of the players"""
+        if self.highest_break:
+            assert self.break_owner in [self.player1, self.player2], "break owner is not one of the match players."
+
+        return self
 
     def summary(self, lang="eng") -> str:
         """Returns a string representation of the match.
@@ -133,11 +129,11 @@ class SnookerMatch(BaseModel):
         return result + break_
 
     @classmethod
-    def get_model(cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = None):
-        """Returns a SnookerMatch model with valid players set as a class attribute at runtime."""
+    def get_model(cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = 2) -> "SnookerMatch":
+        """Returns a version of the model with valid players set at runtime."""
         return create_model(
             cls.__name__,
             __base__=cls,
-            _valid_players=valid_players,
-            _max_score=max_score,
+            valid_players=valid_players,
+            max_score=max_score,
         )
