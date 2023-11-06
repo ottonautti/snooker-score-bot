@@ -76,8 +76,11 @@ async def handle_score(
         output: dict = llm.run(msg.body)
         snooker_match = model(**output)
     except ValidationError as err:
-        twilio.send_message(msg.sender, messages.REPLY_404)
-        raise HTTPException(status_code=400, detail=err.errors()) from err
+        twilio.send_message(msg.sender, messages.REPLY_400)
+        # TODO: alert admin
+        error_messages: list[str] = [err.get("msg") for err in err.errors()]
+        detail = { "llm_output": output, "error_messages": error_messages }
+        raise HTTPException(400, detail)
     sheet.record_match(values={**snooker_match.dict(), "passage": msg.body}, sender=msg.sender)
     reply = messages.REPLY_201.format(snooker_match.summary(settings.APP_LANG))
     twilio.send_message(msg.sender, reply)

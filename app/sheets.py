@@ -27,7 +27,7 @@ class SnookerSheet(gspread.Spreadsheet):
         # check that expected named ranges exist
         for name in self.named_ranges.values():
             if not name in [nr["name"] for nr in self.list_named_ranges()]:
-                raise RuntimeError(f"Named range {name} not found in spreadsheet")
+                raise RuntimeError(f"Named range `{name}` not found in spreadsheet")
 
         # check that expected sheets exist
         self.results_sheet = self.worksheet(self.results_sheet_name)

@@ -1,14 +1,11 @@
 import logging
 import os
-from unittest.mock import patch
 from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
-from app.llm.inference import SnookerScoresLLM
-from app.main import app, get_llm, get_sheet, get_twilio
-from app.models import SnookerMatch, SnookerPlayer
+from app.main import app, get_sheet, get_twilio
+from app.models import SnookerPlayer
 from app.sheets import SnookerSheet
 
 from ..llm.fewshots_mock import MockFewShotData
@@ -65,13 +62,6 @@ def test_app_dryrun(client_with_mocks):
         response = client_with_mocks.post(
             "/scores", data={"Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.", "From": "+358123456789"}
         )
-    # Validation error
-    except ValidationError as e:
-        # this is fine
-        pass
-    except:
-        # raise everything else
-        raise
     finally:
         # revert dependency overrides
         app.dependency_overrides = overrides
