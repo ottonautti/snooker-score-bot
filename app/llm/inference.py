@@ -4,8 +4,9 @@ import json
 import os
 from typing import Literal
 
-from langchain import LLMChain
-from langchain.llms import OpenAI, VertexAI
+from langchain.chains import LLMChain
+from langchain.llms.openai import OpenAI
+from langchain.llms.vertexai import VertexAI
 
 from ..models import SnookerPlayer
 from . import prompts
