@@ -1,12 +1,13 @@
 from typing import Literal, Union
 
+
 class EngMessages:
-    REPLY_201 = "Thank you, match was recorded as:\n{}"
-    REPLY_400 = "Sorry, I could not understand the message."
+    OK = "Thank you, match was recorded as:\n{}"
+    INVALID = "Sorry, I could not understand the message."
 
 class FinMessages:
-    REPLY_201 = "Kiitos, ottelu kirjattiin:\n{}"
-    REPLY_400 = "En ymmärtänyt viestiä, pahoittelut."
+    OK = "Kiitos, ottelu kirjattiin:\n{}"
+    INVALID = "En ymmärtänyt viestiä, pahoittelut."
 
 def get_messages(lang: Literal["fin", "eng"]) -> Union[FinMessages, EngMessages]:
     if lang.lower() == "fin":

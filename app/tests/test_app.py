@@ -1,6 +1,8 @@
+import json
 import logging
 import os
 from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -9,11 +11,17 @@ from app.models import SnookerPlayer
 from app.sheets import SnookerSheet
 
 from ..llm.fewshots_mock import MockFewShotData
+from ..llm.inference import SnookerScoresLLM
 
 os.environ["TWILIO_NO_SEND"] = "True"
 
 # TODO: test writing to Google sheet, but not on production file
+GOOGLESHEETS_SHEETID_PROD = os.environ["GOOGLESHEETS_SHEETID"]
 GOOGLESHEETS_SHEETID_TEST = "12zoI6AQRvqB_t4rrmhgwsRT4RAlbJnKv3ovZgI_NtOY"
+
+PRODUCTION_SHEET = SnookerSheet(spreadsheet_id=GOOGLESHEETS_SHEETID_PROD)
+LLM_GOOGLE = SnookerScoresLLM(llm="vertexai")
+LLM_OPENAI = SnookerScoresLLM(llm="openai")
 
 
 class MockTwilio:
@@ -60,7 +68,11 @@ def test_app_dryrun(client_with_mocks):
     # Act
     try:
         response = client_with_mocks.post(
-            "/scores", data={"Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.", "From": "+358123456789"}
+            "/scores",
+            data={
+                "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
+                "From": "+358123456789",
+            },
         )
     finally:
         # revert dependency overrides
@@ -85,7 +97,10 @@ def test_e2e(client_with_mocks: TestClient):
     # make the LLM return the mock match
     response = client_with_mocks.post(
         "/scores",
-        data={"Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.", "From": "+358123456789"},
+        data={
+            "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
+            "From": "+358123456789",
+        },
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
 
@@ -109,3 +124,14 @@ def test_e2e(client_with_mocks: TestClient):
     # check that the match was recorded to the sheet
     num_matches_after = len(sheet.results_sheet.get_all_values())
     assert num_matches_after == num_matches_before + 1
+
+
+
+def read_passages():
+    with open("/home/otto/dev/otto/snooker-scores/local-only/test_passages.txt") as f:
+        yield from f.readlines()
+
+@pytest.mark.parametrize("passage", read_passages())
+def test_passages(passage: str):
+    production_players = PRODUCTION_SHEET.players_blob
+    assert LLM_OPENAI.infer(passage, production_players) == LLM_GOOGLE.infer(passage, production_players)

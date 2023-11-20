@@ -4,6 +4,7 @@ import json
 import os
 from typing import Literal
 
+from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains import LLMChain
 from langchain.llms.openai import OpenAI
 from langchain.llms.vertexai import VertexAI
@@ -11,6 +12,7 @@ from langchain.llms.vertexai import VertexAI
 from ..models import SnookerPlayer
 from . import prompts
 
+stdout_handler = StdOutCallbackHandler()
 
 class SnookerScoresLLM:
     """LLM client for extracting snooker scores from messages"""
@@ -22,25 +24,22 @@ class SnookerScoresLLM:
 
     def __init__(
         self,
-        players: list[SnookerPlayer],  # list of valid players
         llm: Literal["openai", "vertexai"] = "openai",
+        model_name=None,
         prompt=None,
     ):
-        self.llm = self.llms[llm]()
-        self.players = players
+        if model_name is None:
+            self.llm = self.llms[llm]()
+        else:
+            self.llm = self.llms[llm](model_name=model_name)
         self.verbose = bool(os.getenv("LANGCHAIN_VERBOSE", False))
         if not prompt:
             prompt = prompts.get_prompt()
         self.prompt = prompt
 
-    @property
-    def player_names_and_groups(self):
-        """Returns a text represenation of player names and groups."""
-        return "\n".join(map(str, self.players))
-
-    def run(self, passage: str) -> dict:
-        llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose)
-        llm_output_raw = llm_chain.run(valid_players=self.player_names_and_groups, passage=passage)
+    def infer(self, passage: str, players_blob: str) -> dict:
+        llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose, callbacks=[stdout_handler])
+        llm_output_raw = llm_chain.run(players_blob=players_blob, passage=passage)
         try:
             llm_output = json.loads(llm_output_raw) or {}
             output = {"passage": passage, **llm_output}

@@ -46,8 +46,9 @@ class SnookerSheet(gspread.Spreadsheet):
         return [SnookerPlayer(name=plr[0], group=plr[1]) for plr in players_rows]
 
     @property
-    def players(self) -> list[SnookerPlayer]:
-        return self.get_current_players()
+    def players_blob(self) -> str:
+        """Newline-separated list of current players"""
+        return "\n".join(map(str, self.get_current_players()))
 
     def record_match(self, values: dict, sender=None):
         """Record match to spreadsheet"""
