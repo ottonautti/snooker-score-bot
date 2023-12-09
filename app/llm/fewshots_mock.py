@@ -41,8 +41,12 @@ class MockFewShotData(FewShotData):
                         "player1_score": 2,
                         "player2_score": 1,
                         "winner": "Huhtala Katja",
-                        "highest_break": 45,
-                        "break_owner": "Huhtala Katja",
+                        "breaks": [
+                            {
+                                "player": "Huhtala Katja",
+                                "points": 45,
+                            }
+                        ],
                     }
                 ),
             },
@@ -57,14 +61,41 @@ class MockFewShotData(FewShotData):
                         "player1_score": 2,
                         "player2_score": 0,
                         "winner": "Laaksonen Sinikka",
-                        "highest_break": None,
-                        "break_owner": None,
+                        "breaks": [],
                     }
                 ),
             },
             {
                 "valid_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Aukusti v Yrjö 2-1 Highest break: Aukusti - 18",
+                "passage": "Valtteri v Anneli 2-1, breaks: Anneli 107, 101, Valtteri 52",
+                "output": to_json(
+                    {
+                        "group": "L4",
+                        "player1": "Pulkkinen Valtteri",
+                        "player2": "Tähtinen Anneli",
+                        "player1_score": 2,
+                        "player2_score": 1,
+                        "winner": "Pulkkinen Valtteri",
+                        "breaks": [
+                            {
+                                "player": "Tähtinen Anneli",
+                                "points": 107,
+                            },
+                            {
+                                "player": "Tähtinen Anneli",
+                                "points": 101,
+                            },
+                            {
+                                "player": "Pulkkinen Valtteri",
+                                "points": 52,
+                            },
+                        ],
+                    }
+                ),
+            },
+            {
+                "valid_players": "\n".join([str(plr) for plr in self.players]),
+                "passage": "Aukusti v Yrjö 2-1, breikit Aukusti 25, Yrjö 18",
                 "output": to_json(
                     {
                         "group": "L3",
@@ -73,8 +104,16 @@ class MockFewShotData(FewShotData):
                         "player1_score": 2,
                         "player2_score": 1,
                         "winner": "Sjöblom Aukusti",
-                        "highest_break": 18,
-                        "break_owner": "Sjöblom Aukusti",
+                        "breaks": [
+                            {
+                                "player": "Sjöblom Aukusti",
+                                "points": 25,
+                            },
+                            {
+                                "player": "Väisänen Yrjö",
+                                "points": 18,
+                            },
+                        ],
                     }
                 ),
             },
@@ -89,8 +128,7 @@ class MockFewShotData(FewShotData):
                         "player1_score": 2,
                         "player2_score": 1,
                         "winner": "Tähtinen Anneli",
-                        "highest_break": None,
-                        "break_owner": None,
+                        "breaks": [],
                     }
                 ),
             },

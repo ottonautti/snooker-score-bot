@@ -90,7 +90,7 @@ def test_e2e(client_with_mocks: TestClient):
     today = datetime.today()
     sheet = SnookerSheet(spreadsheet_id=GOOGLESHEETS_SHEETID_TEST)
     # count number of matches before test
-    num_matches_before = len(sheet.results_sheet.get_all_values())
+    num_matches_before = len(sheet.matches_sheet.get_all_values())
 
     # Act
 
@@ -117,12 +117,13 @@ def test_e2e(client_with_mocks: TestClient):
             "player2_score": 1,
             "winner": "Huhtala Katja",
             "highest_break": 45,
-            "break_owner": "Huhtala Katja",
+            "highest_break_player": "Huhtala Katja",
+            "breaks": [{"player": "Huhtala Katja", "points": 45}],
         },
     }
 
     # check that the match was recorded to the sheet
-    num_matches_after = len(sheet.results_sheet.get_all_values())
+    num_matches_after = len(sheet.matches_sheet.get_all_values())
     assert num_matches_after == num_matches_before + 1
 
 
@@ -132,6 +133,6 @@ def read_passages():
         yield from f.readlines()
 
 @pytest.mark.parametrize("passage", read_passages())
-def test_passages(passage: str):
+def test_identical_inference_openai_vs_goole(passage: str):
     production_players = PRODUCTION_SHEET.players_blob
     assert LLM_OPENAI.infer(passage, production_players) == LLM_GOOGLE.infer(passage, production_players)

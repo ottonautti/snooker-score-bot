@@ -8,13 +8,13 @@ from pydantic.fields import Field
 class EngMessages:
     RESULT_WIN = "{winner} won {loser} by {winner_score} frames to {loser_score}"
     RESULT_DRAW = "Match between {player1} and {player2} ended in a draw at {equal_score} frames each."
-    BREAK = "(highest break {highest_break} by {break_owner})"
+    BREAK = "(highest break {highest_break} by {highest_break_player})"
 
 
 class FinMessages:
     RESULT_WIN = "{winner} voitti vastustajan {loser} {winner_score} - {loser_score}"
     RESULT_DRAW = "Ottelu {player1} - {player2} päättyi tasapeliin {equal_score} - {equal_score}."
-    BREAK = "(korkein breikki {highest_break}, {break_owner})"
+    BREAK = "(korkein breikki {highest_break}, {highest_break_player})"
 
 
 def get_messages(lang: Literal["fin", "eng"]) -> Union[FinMessages, EngMessages]:
@@ -34,6 +34,13 @@ class SnookerPlayer(BaseModel):
     def __str__(self):
         return f"{self.name} ({self.group})"
 
+class SnookerBreak(BaseModel):
+    """Snooker break"""
+
+    date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
+    player: str
+    points: int = Field(gt=0, le=147)
+
 
 class SnookerMatch(BaseModel):
     """Snooker match"""
@@ -45,8 +52,7 @@ class SnookerMatch(BaseModel):
     player1_score: int
     player2_score: int
 
-    highest_break: Optional[int] = None
-    break_owner: Optional[str] = None
+    breaks: list[SnookerBreak] = Field(default_factory=list)
 
     valid_players: ClassVar[list[SnookerPlayer]]
     max_score: ClassVar[int] = 2
@@ -59,6 +65,16 @@ class SnookerMatch(BaseModel):
         if self.player1_score > self.player2_score:
             return self.player1
         return self.player2
+
+    @computed_field
+    def highest_break(self) -> Optional[int]:
+        """Returns the highest break"""
+        return max((b.points for b in self.breaks), default=None)
+
+    @computed_field
+    def highest_break_player(self) -> Optional[str]:
+        """Returns the player with the highest break"""
+        return max(self.breaks, key=lambda b: b.points, default=None).player if self.breaks else None
 
     @field_validator("player1_score", "player2_score")
     def valid_score(cls, score):
@@ -87,11 +103,10 @@ class SnookerMatch(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def valid_highest_break(self):
-        """If there is a break, there must be a break owner. Break owner must be one of the players"""
-        if self.highest_break:
-            assert self.break_owner in [self.player1, self.player2], "break owner is not one of the match players."
-
+    def breaks_are_by_match_players(self):
+        """Breaks have to be by one of the match players"""
+        for b in self.breaks:
+            assert b.player in [self.player1, self.player2], f"{b.player} is not a player in this match"
         return self
 
     def summary(self, lang="eng") -> str:
@@ -119,14 +134,14 @@ class SnookerMatch(BaseModel):
                 winner_score=winner_score,
                 loser_score=loser_score,
             )
-        break_ = ""
+        b = ""
         if self.highest_break:
-            break_ += " " + messages.BREAK.format(
+            b += " " + messages.BREAK.format(
                 highest_break=self.highest_break,
-                break_owner=self.break_owner,
+                highest_break_player=self.highest_break_player,
             )
 
-        return result + break_
+        return result + b
 
     @classmethod
     def get_model(cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = 2) -> "SnookerMatch":

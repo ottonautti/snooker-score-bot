@@ -11,8 +11,10 @@ from .models import SnookerPlayer
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 DATE_FORMAT = "%d.%m.%Y"
 
+
 class SnookerSheet(gspread.Spreadsheet):
-    results_sheet_name = "_results"
+    results_sheet_name = "_matches"
+    breaks_sheet_name = "_breaks"
     named_ranges = {
         "players": "nr_currentPlayers",
     }
@@ -30,7 +32,8 @@ class SnookerSheet(gspread.Spreadsheet):
                 raise RuntimeError(f"Named range `{name}` not found in spreadsheet")
 
         # check that expected sheets exist
-        self.results_sheet = self.worksheet(self.results_sheet_name)
+        self.matches_sheet = self.worksheet(self.results_sheet_name)
+        self.breaks_sheet = self.worksheet(self.breaks_sheet_name)
 
     def _unhide_all_columns(self, ws: gspread.Worksheet):
         """Unhide all columns in worksheet.
@@ -50,13 +53,17 @@ class SnookerSheet(gspread.Spreadsheet):
         """Newline-separated list of current players"""
         return "\n".join(map(str, self.get_current_players()))
 
-    def record_match(self, values: dict, sender=None):
+    @staticmethod
+    def days_since_1900(timestamp) -> str:
+        """Generate Excel date value from timestamp"""
+        return (timestamp - datetime(1899, 12, 30).date()).days
+
+    def record_match(self, values: dict, passage: str, sender: str = None):
         """Record match to spreadsheet"""
-        self._unhide_all_columns(self.results_sheet)
+        self._unhide_all_columns(self.matches_sheet)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        date_days_since_1900 = (values.get("date") - datetime(1899, 12, 30).date()).days
         ordered_values = [
-            r"\r".join([timestamp, str(sender), values["passage"]]),
+            r"\r".join([timestamp, str(sender), passage]),
             values["group"],
             values["player1"],
             values["player2"],
@@ -64,10 +71,27 @@ class SnookerSheet(gspread.Spreadsheet):
             values["player2_score"],
             values["winner"],
             values["highest_break"],
-            values["break_owner"],
-            date_days_since_1900,
+            values["highest_break_player"],
+            self.days_since_1900(values["date"]),
         ]
-        self.results_sheet.append_row(ordered_values)
+        self.matches_sheet.append_row(ordered_values)
+
+        return True
+
+    def record_break(self, break_: dict, passage: str = None, sender: str = None):
+        """Record break to spreadsheet"""
+        self._unhide_all_columns(self.matches_sheet)
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # excel fields are: timestamp	from	passage	player	break	date
+        ordered_values = [
+            timestamp,
+            sender,
+            passage,
+            break_["player"],
+            break_["points"],
+            self.days_since_1900(break_["date"]),
+        ]
+        self.breaks_sheet.append_row(ordered_values)
 
         return True
 

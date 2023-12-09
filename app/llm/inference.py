@@ -1,6 +1,7 @@
 """LLM interface."""
 
 import json
+import logging
 import os
 from typing import Literal
 
@@ -9,10 +10,12 @@ from langchain.chains import LLMChain
 from langchain.llms.openai import OpenAI
 from langchain.llms.vertexai import VertexAI
 
-from ..models import SnookerPlayer
 from . import prompts
 
+logging.basicConfig(level=logging.INFO)
+
 stdout_handler = StdOutCallbackHandler()
+
 
 class SnookerScoresLLM:
     """LLM client for extracting snooker scores from messages"""
@@ -42,6 +45,7 @@ class SnookerScoresLLM:
         llm_output_raw = llm_chain.run(players_blob=players_blob, passage=passage)
         try:
             llm_output = json.loads(llm_output_raw) or {}
+            logging.info(f"{self.llm.__class__.__name__} output: {llm_output}")
             output = {"passage": passage, **llm_output}
         except json.JSONDecodeError as e:
             raise ValueError(f"LLM did not output valid JSON: {llm_output_raw}") from e

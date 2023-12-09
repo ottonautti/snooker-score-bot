@@ -1,3 +1,4 @@
+
 """Prompt and few-shot example generation."""
 
 import logging
@@ -19,16 +20,18 @@ def get_prompt():
     """Generates prompt to LLM containing instruction, few-shot examples and placeholder for user input."""
 
     prompt_prefix = """The following passage contains the outcome of a snooker match.
-    The passage is about a match between two players containing frames won by each player and, optionally, the highest break
-    between the two players. Extract said information from the passage in JSON format.
+    The passage is about a match between two players containing frames won by each player and, optionally, any notable
+    breaks.
 
-    The passage should only ever contain information pertaining to valid players. Below is a list of full names of
-    valid players and their associated groups. Only ever return names of players that are included in the list of
-    valid players. Only ever return names as they appear in the list of valid players. Players belong to different
-    groups. A match should only ever be between players in the same group. If there is a player with the same name in a
-    different group, assume that the player in the passage is the one in the same group as the other player in the match.
+    The passage should only ever contain information pertaining to valid players. Below is a list of full names of valid
+    players and their associated groups. Only ever return names of players that are included in the list of valid
+    players. Only ever return names EXACTLY as they appear in the list of valid players, including order of names.
 
-    If a break is not explicitly mentioned in the passage, return null values for the `highest_break` and `break_owner`.
+    Players belong to different groups. A match should only ever be between players in the same group. If there is a
+    player with the same name in a different group, assume that the player in the passage is the one in the same group
+    as the other player in the match.
+
+    If a break is not explicitly mentioned in the passage, return an empty list for breaks.
     """
 
     return FewShotPromptWithTemplates(

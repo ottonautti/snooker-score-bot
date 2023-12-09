@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from .llm.inference import SnookerScoresLLM
-from .models import SnookerMatch, SnookerPlayer
+from .models import SnookerBreak, SnookerMatch
 from .settings import messages, settings
 from .sheets import SnookerSheet
 from .twilio_client import Twilio, TwilioInboundMessage
@@ -21,7 +21,7 @@ def setup_logging():
     """Sets up logging for the app"""
     client = google.cloud.logging.Client()
     client.setup_logging()  # registers handler with built-in logging
-    if os.environ.get("DEBUG_APP"): # when running locally, output to stdout
+    if settings.DEBUG:  # when running locally, output to stdout
         logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
         logging.getLogger().setLevel(logging.INFO)
 
@@ -52,34 +52,40 @@ async def get_sheet():
     sheet_id = os.environ.get("GOOGLESHEETS_SHEETID")
     return SnookerSheet(sheet_id)
 
+
 async def get_llm():
     return SnookerScoresLLM(llm=settings.LLM)
 
+
 @app.post("/scores")
 async def handle_score(
-    twilio=Depends(get_twilio),
+    twilio: Twilio = Depends(get_twilio),
+    sheet: SnookerSheet = Depends(get_sheet),
     msg=Depends(parse_twilio_msg),
     llm=Depends(get_llm),
-    sheet=Depends(get_sheet),
 ):
     """Handles inbound scores"""
     logging.info("Received message from %s: %s", msg.sender, msg.body)
     valid_players = sheet.get_current_players()
-    model = SnookerMatch.get_model(valid_players=valid_players, max_score=settings.MAX_SCORE)
+    MatchModel = SnookerMatch.get_model(  # pylint: disable=C0103
+        valid_players=valid_players, max_score=settings.MAX_SCORE
+    )
     try:
         output: dict = llm.infer(passage=msg.body, players_blob=sheet.players_blob)
-        snooker_match = model(**output)
+        breaks: list[SnookerBreak] = [SnookerBreak(**b) for b in output.pop("breaks")]
+        snooker_match = MatchModel(**output | {"breaks": breaks})
     except ValidationError as err:
         twilio.send_message(msg.sender, messages.INVALID)
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
-        detail = { "llm_output": output, "error_messages": error_messages }
+        detail = {"llm_output": output, "error_messages": error_messages}
         logging.error(json.dumps(detail))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail)
-    if not msg.is_test:
-        sheet.record_match(values={**snooker_match.dict(), "passage": msg.body}, sender=msg.sender)
+    sheet.record_match(values=snooker_match.model_dump(), passage=msg.body, sender=msg.sender)
+    for break_ in breaks:
+        sheet.record_break(break_.model_dump(), passage=msg.body, sender=msg.sender)
     reply = messages.OK.format(snooker_match.summary(settings.APP_LANG))
     twilio.send_message(msg.sender, reply)
-    reply_msg =  "Match tested" if msg.is_test else "Match recorded"
+    reply_msg = "Match tested" if msg.is_test else "Match recorded"
     content = {"status": reply_msg, "match": jsonable_encoder(snooker_match)}
     logging.info(json.dumps(content))
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=content)
