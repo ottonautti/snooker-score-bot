@@ -1,3 +1,4 @@
+!app/llm/fewshots_groove.py
 helpers/
 Dockerfile
 *.pyc
