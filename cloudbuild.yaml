@@ -1,15 +1,21 @@
 steps:
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - cp
+      - gs://otto-snooker-bot_cloudbuild/fewshots_groove.py
+      - app/llm/fewshots_groove.py
+    id: Copy fewshots_groove.py
   - name: gcr.io/cloud-builders/docker
     args:
       - build
-      - '--tag=$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA'
+      - '--tag=$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$_REVISION_ID'
       - '--file=Dockerfile'
       - .
     id: Build
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+      - $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$_REVISION_ID
     id: Push
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     args:
@@ -18,8 +24,8 @@ steps:
       - update
       - $_SERVICE_NAME
       - '--platform=managed'
-      - --image=$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
-      - --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$COMMIT_SHA,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
+      - --image=$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$_REVISION_ID
+      - --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$_REVISION_ID,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
       - '--region=$_DEPLOY_REGION'
       - '--set-env-vars=NODE_ENV=production'
       - '--set-secrets=OPENAI_API_KEY=openai-api-key:latest,TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,GOOGLESHEETS_SHEETID=googlesheets-sheetid:latest'
@@ -29,14 +35,14 @@ steps:
     id: Deploy
     entrypoint: gcloud
 images:
-  - $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+  - $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$_REVISION_ID
 options:
   substitutionOption: ALLOW_LOOSE
 substitutions:
   _AR_HOSTNAME: europe-north1-docker.pkg.dev
   _REPO_NAME: gtj-snooker-scores
   _DEPLOY_REGION: europe-north1
-  _IMAGE: $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$COMMIT_SHA
+  _IMAGE: $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$_REVISION_ID
   _PLATFORM: managed
   _SERVICE_ACCOUNT: snooker-bot@otto-snooker-bot.iam.gserviceaccount.com
   _SERVICE_NAME: gtj-snooker-scores
