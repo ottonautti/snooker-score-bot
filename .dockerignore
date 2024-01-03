@@ -1,6 +1,6 @@
 !app/llm/fewshots_groove.py
-helpers/
-Dockerfile
+appScript/
+
 *.pyc
 *.pyo
 *.pyd
