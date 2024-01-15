@@ -32,20 +32,22 @@ def get_prompt():
     as the other player in the match.
 
     If a break is not explicitly mentioned in the passage, return an empty list for breaks.
+
+    Also, if it seems certain that the passage is in English, output `language` as "eng", otherwise assume "fin".
     """
 
     return FewShotPromptWithTemplates(
         examples=few_shot_data.examples,
         example_prompt=PromptTemplate(
-            template="Valid players:\n{{ players_blob }}\n\nPassage: {{ passage }}\n\nJSON: {{ output }}\n",
-            input_variables=["players_blob", "passage", "output"],
+            template="Valid players:\n{{ valid_players }}\n\nPassage: {{ passage }}\n\nJSON: {{ output }}\n",
+            input_variables=["valid_players", "passage", "output"],
             template_format="jinja2",
         ),
-        input_variables=["players_blob", "passage"],
+        input_variables=["valid_players", "passage"],
         prefix=PromptTemplate(template=prompt_prefix, input_variables=[], template_format="jinja2"),
         suffix=PromptTemplate(
-            template="Valid players:\n{{ players_blob }}\n\nPassage: {{ passage }}\n\nJSON:",
-            input_variables=["players_blob", "passage"],
+            template="Valid players:\n{{ valid_players }}\n\nPassage: {{ passage }}\n\nJSON:",
+            input_variables=["valid_players", "passage"],
             template_format="jinja2",
         ),
         template_format="jinja2",
@@ -54,4 +56,4 @@ def get_prompt():
 
 if __name__ == "__main__":
     # test prompt generation
-    print(get_prompt().format(players_blob="foo", passage="bar"))
+    print(get_prompt().format(valid_players="foo", passage="bar"))

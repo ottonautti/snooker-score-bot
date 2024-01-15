@@ -1,52 +1,109 @@
 import pytest
-from app.models import SnookerBreak, SnookerMatch, SnookerPlayer
-
 from pydantic import ValidationError
+from functools import partial
+from app.models import SnookerBreak, SnookerMatch, SnookerPlayer, get_match_model
 
-players = [SnookerPlayer(name="Player 1", group="L1"), SnookerPlayer(name="Player 2", group="L1")]
-MatchModel = SnookerMatch.get_model(valid_players=players, max_score=2)
+player1 = SnookerPlayer(name="Player Yksi", group="L1")
+player2 = SnookerPlayer(name="Player Kaksi", group="L1")
+player3 = SnookerPlayer(name="Player Kolme", group="L1")
+players = [player1, player2]
+
+match_model_for_testing = partial(get_match_model, valid_players=players, max_score=2)
 
 
 def test_winner():
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=2, player2_score=1, breaks=[])
-    assert match.winner == "Player 1"
+    match = match_model_for_testing(
+        group="L1", player1="Player Yksi", player2="Player Kaksi", player1_score=2, player2_score=1
+    )
+    assert match.winner == player1
 
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=1, player2_score=2, breaks=[])
-    assert match.winner == "Player 2"
+    match = match_model_for_testing(
+        group="L1", player1="Player Yksi", player2="Player Kaksi", player1_score=1, player2_score=2
+    )
+    assert match.winner == player2
 
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=1, player2_score=1, breaks=[])
+    match = match_model_for_testing(
+        group="L1", player1="Player Yksi", player2="Player Kaksi", player1_score=1, player2_score=1
+    )
     assert match.winner == None
 
+
 def test_match_without_breaks():
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=2, player2_score=1)
+    match = match_model_for_testing(
+        group="L1", player1="Player Yksi", player2="Player Kaksi", player1_score=2, player2_score=1
+    )
     assert match.breaks == []
 
+
 def test_highest_break():
-    breaks = [SnookerBreak(player="Player 1", points=50), SnookerBreak(player="Player 2", points=60)]
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=2, player2_score=1, breaks=breaks)
+    match = match_model_for_testing(
+        group="L1",
+        player1="Player Yksi",
+        player2="Player Kaksi",
+        player1_score=2,
+        player2_score=1,
+        breaks=[{"player": "Player Yksi", "points": 50}, {"player": "Player Kaksi", "points": 60}],
+    )
     assert match.highest_break == 60
-
-
-def test_highest_break_player():
-    breaks = [SnookerBreak(player="Player 1", points=50), SnookerBreak(player="Player 2", points=60)]
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=2, player2_score=1, breaks=breaks)
-    assert match.highest_break_player == "Player 2"
-
-
-def test_breaks_are_by_match_players():
-    breaks = [SnookerBreak(player="Player 1", points=50), SnookerBreak(player="Player 2", points=60)]
-    match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=2, player2_score=1, breaks=breaks)
-    assert match.breaks_are_by_match_players() == match
+    assert match.highest_break_player == player2
 
 
 def test_invalid_match_score_raises():
     with pytest.raises(ValidationError):
-        match = MatchModel(group="L1", player1="Player 1", player2="Player 2", player1_score=3, player2_score=1, breaks=[])
-        match.valid_score(match.player1_score)
+        match = match_model_for_testing(
+            group="L1", player1="Player Yksi", player2="Player Kaksi", player1_score=3, player2_score=1
+        )
+        # match.valid_score(match.player1_score)
 
 
 def test_breaks_are_by_match_players_raises():
     with pytest.raises(ValidationError):
-        breaks = [SnookerBreak(player="Player 1", points=50), SnookerBreak(player="Player 2", points=60)]
-        match = MatchModel(group="L1", player1="Player 1", player2="Player 3", player1_score=2, player2_score=1, breaks=breaks)
-        match.breaks_are_by_match_players()
+        match = match_model_for_testing(
+            group="L1",
+            player1="Player Yksi",
+            player2="Player Kaksi",
+            player1_score=2,
+            player2_score=1,
+            breaks=[
+                {"player": "Player Yksi", "points": 50},
+                {"player": "Player Kolme", "points": 100},
+            ],
+        )
+        # match.breaks_are_by_match_players()
+
+
+def test_match_summary():
+    match = match_model_for_testing(
+        group="L1",
+        player1="Player Yksi",
+        player2="Player Kaksi",
+        player1_score=2,
+        player2_score=1,
+        breaks=[
+            {"player": "Player Yksi", "points": 50},
+            {"player": "Player Yksi", "points": 70},
+            {"player": "Player Kaksi", "points": 60},
+        ],
+    )
+
+    assert (
+        match.summary("fin") == "Player Yksi voitti vastustajan Player Kaksi 2–1.\nBreikit: Yksi 50, Yksi 70, Kaksi 60."
+    )
+    assert (
+        match.summary("eng")
+        == "Player Yksi won Player Kaksi by 2 frames to 1.\nBreaks: Yksi 50, Yksi 70, Kaksi 60."
+    )
+
+
+def test_match_summary_no_breaks():
+    match = match_model_for_testing(
+        group="L1",
+        player1="Player Yksi",
+        player2="Player Kaksi",
+        player1_score=2,
+        player2_score=1,
+        breaks=[],
+    )
+
+    assert match.summary("fin") == "Player Yksi voitti vastustajan Player Kaksi 2–1."
+    assert match.summary("eng") == "Player Yksi won Player Kaksi by 2 frames to 1."

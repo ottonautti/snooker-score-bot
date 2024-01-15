@@ -40,9 +40,9 @@ class SnookerScoresLLM:
             prompt = prompts.get_prompt()
         self.prompt = prompt
 
-    def infer(self, passage: str, players_blob: str) -> dict:
+    def infer(self, passage: str, valid_players: str) -> dict:
         llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose, callbacks=[stdout_handler])
-        llm_output_raw = llm_chain.run(players_blob=players_blob, passage=passage)
+        llm_output_raw = llm_chain.run(valid_players=valid_players, passage=passage)
         try:
             llm_output = json.loads(llm_output_raw) or {}
             logging.info(f"{self.llm.__class__.__name__} output: {llm_output}")

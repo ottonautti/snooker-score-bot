@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from .llm.inference import SnookerScoresLLM
-from .models import SnookerBreak, SnookerMatch
+from .models import get_match_model
 from .settings import messages, settings
 from .sheets import SnookerSheet
 from .twilio_client import Twilio, TwilioInboundMessage
@@ -67,13 +67,11 @@ async def handle_score(
     """Handles inbound scores"""
     logging.info("Received message from %s: %s", msg.sender, msg.body)
     valid_players = sheet.get_current_players()
-    MatchModel = SnookerMatch.get_model(  # pylint: disable=C0103
-        valid_players=valid_players, max_score=settings.MAX_SCORE
-    )
     try:
-        output: dict = llm.infer(passage=msg.body, players_blob=sheet.players_blob)
-        breaks: list[SnookerBreak] = [SnookerBreak(**b) for b in output.pop("breaks")]
-        snooker_match = MatchModel(**output | {"breaks": breaks})
+        output: dict = llm.infer(passage=msg.body, valid_players=sheet.players_txt)
+        snooker_match = get_match_model(
+            valid_players=valid_players, max_score=settings.MAX_SCORE, **output
+        )
     except ValidationError as err:
         twilio.send_message(msg.sender, messages.INVALID)
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
@@ -81,9 +79,9 @@ async def handle_score(
         logging.error(json.dumps(detail))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail)
     sheet.record_match(values=snooker_match.model_dump(), passage=msg.body, sender=msg.sender)
-    for break_ in breaks:
+    for break_ in snooker_match.breaks:
         sheet.record_break(break_.model_dump(), passage=msg.body, sender=msg.sender)
-    reply = messages.OK.format(snooker_match.summary(settings.APP_LANG))
+    reply = snooker_match.summary(snooker_match.passage_language)
     twilio.send_message(msg.sender, reply)
     reply_msg = "Match tested" if msg.is_test else "Match recorded"
     content = {"status": reply_msg, "match": jsonable_encoder(snooker_match)}

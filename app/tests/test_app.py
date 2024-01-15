@@ -1,4 +1,3 @@
-import json
 import logging
 import os
 from datetime import datetime
@@ -109,6 +108,7 @@ def test_e2e(client_with_mocks: TestClient):
     assert response.json() == {
         "status": "Match recorded",
         "match": {
+            "passage_language": "fin",
             "date": today.strftime("%Y-%m-%d"),
             "group": "L1",
             "player1": "Huhtala Katja",
@@ -118,7 +118,7 @@ def test_e2e(client_with_mocks: TestClient):
             "winner": "Huhtala Katja",
             "highest_break": 45,
             "highest_break_player": "Huhtala Katja",
-            "breaks": [{"player": "Huhtala Katja", "points": 45}],
+            "breaks": [{"date": today.strftime("%Y-%m-%d"), "player": "Huhtala Katja", "points": 45}],
         },
     }
 
@@ -127,12 +127,11 @@ def test_e2e(client_with_mocks: TestClient):
     assert num_matches_after == num_matches_before + 1
 
 
+# def read_passages():
+#     with open("/home/otto/dev/otto/snooker-scores/local-only/test_passages.txt") as f:
+#         yield from f.readlines()
 
-def read_passages():
-    with open("/home/otto/dev/otto/snooker-scores/local-only/test_passages.txt") as f:
-        yield from f.readlines()
-
-@pytest.mark.parametrize("passage", read_passages())
-def test_identical_inference_openai_vs_goole(passage: str):
-    production_players = PRODUCTION_SHEET.players_blob
-    assert LLM_OPENAI.infer(passage, production_players) == LLM_GOOGLE.infer(passage, production_players)
+# @pytest.mark.parametrize("passage", read_passages())
+# def test_identical_inference_openai_vs_goole(passage: str):
+#     production_players = PRODUCTION_SHEET.players_txt
+#     assert LLM_OPENAI.infer(passage, production_players) == LLM_GOOGLE.infer(passage, production_players)

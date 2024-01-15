@@ -1,12 +1,18 @@
 """Google sheets API client for managing snooker scores."""
 
 import os
+import pytz
 from datetime import datetime
 
 import google.auth
 import gspread
 
 from .models import SnookerPlayer
+
+
+def get_helsinki_timestamp():
+    return datetime.now(pytz.timezone("Europe/Helsinki")).strftime("%Y-%m-%d %H:%M:%S")
+
 
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 DATE_FORMAT = "%d.%m.%Y"
@@ -49,9 +55,9 @@ class SnookerSheet(gspread.Spreadsheet):
         return [SnookerPlayer(name=plr[0], group=plr[1]) for plr in players_rows]
 
     @property
-    def players_blob(self) -> str:
+    def players_txt(self) -> str:
         """Newline-separated list of current players"""
-        return "\n".join(map(str, self.get_current_players()))
+        return "\n".join([plr._gn for plr in self.get_current_players()])
 
     @staticmethod
     def days_since_1900(timestamp) -> str:
@@ -61,7 +67,7 @@ class SnookerSheet(gspread.Spreadsheet):
     def record_match(self, values: dict, passage: str, sender: str = None):
         """Record match to spreadsheet"""
         self._unhide_all_columns(self.matches_sheet)
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = get_helsinki_timestamp()
         ordered_values = [
             r"\r".join([timestamp, str(sender), passage]),
             values["group"],
@@ -70,8 +76,8 @@ class SnookerSheet(gspread.Spreadsheet):
             values["player1_score"],
             values["player2_score"],
             values["winner"],
-            values["highest_break"],
-            values["highest_break_player"],
+            values.get("highest_break", ""),
+            values.get("highest_break_player", ""),
             self.days_since_1900(values["date"]),
         ]
         self.matches_sheet.append_row(ordered_values)
