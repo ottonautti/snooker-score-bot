@@ -1,3 +1,4 @@
+-r requirements.txt
 python-dotenv
 pytest
 pytest-httpx
