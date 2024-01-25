@@ -11,6 +11,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic.fields import Field
+from .settings import settings
 
 
 class SnookerPlayer(BaseModel):
@@ -135,8 +136,7 @@ class SnookerMatch(BaseModel):
 {% endif -%} {%- if match.breaks -%}
     Breaks: {% for b in match.breaks -%} {{ b.player.first_name }} {{ b.points }} {%- if not
     loop.last %}, {% endif %}{%- endfor -%}.
-{%- endif -%}
-            """
+{%- endif -%}"""
             ),
             "fin": Template(
                 """
@@ -147,8 +147,7 @@ class SnookerMatch(BaseModel):
 {% endif -%} {%- if match.breaks -%}
     Breikit: {% for b in match.breaks -%} {{ b.player.first_name }} {{ b.points }} {%- if not
     loop.last %}, {% endif %}{%- endfor -%}.
-{%- endif -%}
-            """
+{%- endif -%}"""
             ),
         }
 
@@ -163,7 +162,12 @@ class SnookerMatch(BaseModel):
             loser_score=loser_score,
         )
 
-        return summary.strip()
+        sheet_url = settings.SHEET_ENDPOINT_SHORTENED
+        link_line = {
+            "eng": f"League standings: {sheet_url}",
+            "fin": f"Sarjataulukko: {sheet_url}",
+        }
+        return f"{summary}\n{link_line[lang]}"
 
     @classmethod
     def configure_model(cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = 2) -> "SnookerMatch":
