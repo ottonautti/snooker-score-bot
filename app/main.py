@@ -7,7 +7,7 @@ import sys
 import google.cloud.logging
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
 from .llm.inference import SnookerScoresLLM
@@ -87,6 +87,15 @@ async def handle_score(
     content = {"status": reply_msg, "match": jsonable_encoder(snooker_match)}
     logging.info(json.dumps(content))
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=content)
+
+
+@app.get("/sheet")
+async def handle_sheet(sheet: SnookerSheet = Depends(get_sheet)):
+    """Redirects to the Google Sheet, tab corresponding to current round."""
+    url = sheet.get_current_round_url()
+    if not url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No current round")
+    return RedirectResponse(url=url)
 
 
 @app.exception_handler(Exception)
