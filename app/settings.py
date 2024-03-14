@@ -1,5 +1,7 @@
-from .messages import get_messages
 import os
+
+from .messages import get_messages
+
 
 class Settings:
     MAX_SCORE = 2  # Matches are best of 3
