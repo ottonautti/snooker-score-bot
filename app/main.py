@@ -97,6 +97,11 @@ async def handle_sheet(sheet: SnookerSheet = Depends(get_sheet)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No current round")
     return RedirectResponse(url=url)
 
+@app.get("/info")
+async def handle_info():
+    """Redirects to league info page."""
+    return RedirectResponse(url=settings.INFO_SHORTLINK)
+
 
 @app.exception_handler(Exception)
 async def handle_exception(req: Request, exc: Exception):

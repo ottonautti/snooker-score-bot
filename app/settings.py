@@ -10,6 +10,7 @@ class Settings:
 
     DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
     SHEET_SHORTLINK = "https://bit.ly/g147"  # shortened URL to the Google Sheet
+    INFO_SHORTLINK = "https://bit.ly/g147info"  # shortened URL to the INFO-tab of the Google Sheet
 
 
 settings = Settings()
