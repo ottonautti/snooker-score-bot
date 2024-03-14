@@ -9,7 +9,8 @@ class Settings:
     LLM = "vertexai"
 
     DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
-    SHEET_ENDPOINT_SHORTENED = "https://bit.ly/g147"  # shortened URL to the Google Sheet
+    SHEET_SHORTLINK = "https://bit.ly/g147"  # shortened URL to the Google Sheet
+
 
 settings = Settings()
 messages = get_messages(settings.APP_LANG)

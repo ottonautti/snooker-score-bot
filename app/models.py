@@ -162,7 +162,7 @@ class SnookerMatch(BaseModel):
             loser_score=loser_score,
         )
 
-        sheet_url = settings.SHEET_ENDPOINT_SHORTENED
+        sheet_url = settings.SHEET_SHORTLINK
         link_line = {
             "eng": f"League standings: {sheet_url}",
             "fin": f"Sarjataulukko: {sheet_url}",
