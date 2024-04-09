@@ -87,7 +87,7 @@ def test_match_summary():
     )
 
     assert (
-        match.summary("fin").startswith("Player Yksi voitti vastustajan Player Kaksi 2–1.\nBreikit: Yksi 50, Yksi 70, Kaksi 60.")
+        match.summary("fin").startswith("Player Yksi voitti vastustajan Player Kaksi 2-1.\nBreikit: Yksi 50, Yksi 70, Kaksi 60.")
     )
     assert (
         match.summary("eng").startswith("Player Yksi won Player Kaksi by 2 frames to 1.\nBreaks: Yksi 50, Yksi 70, Kaksi 60.")
@@ -104,5 +104,5 @@ def test_match_summary_no_breaks():
         breaks=[],
     )
 
-    assert match.summary("fin").startswith("Player Yksi voitti vastustajan Player Kaksi 2–1.")
+    assert match.summary("fin").startswith("Player Yksi voitti vastustajan Player Kaksi 2-1.")
     assert match.summary("eng").startswith("Player Yksi won Player Kaksi by 2 frames to 1.")

@@ -11,6 +11,7 @@ from pydantic import (
     model_validator,
 )
 from pydantic.fields import Field
+
 from .settings import settings
 
 
@@ -141,9 +142,9 @@ class SnookerMatch(BaseModel):
             "fin": Template(
                 """
 {%- if match.player1_score == match.player2_score -%}
-    {{ player1 }} ja {{ player2 }} pelasivat tasan {{ player1_score }}–{{ player2_score }}.
+    {{ player1 }} ja {{ player2 }} pelasivat tasan {{ player1_score }}-{{ player2_score }}.
 {%- else -%}
-    {{ winner }} voitti vastustajan {{ loser }} {{ winner_score }}–{{ loser_score }}.
+    {{ winner }} voitti vastustajan {{ loser }} {{ winner_score }}-{{ loser_score }}.
 {% endif -%} {%- if match.breaks -%}
     Breikit: {% for b in match.breaks -%} {{ b.player.first_name }} {{ b.points }} {%- if not
     loop.last %}, {% endif %}{%- endfor -%}.
