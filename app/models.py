@@ -180,7 +180,7 @@ class SnookerMatch(BaseModel):
             max_score=max_score,
         )
 
-
+# TODO: decouple model customization and model instantiation
 def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs) -> "SnookerMatch":
     """Returns a version of the model with valid players set at runtime.
 

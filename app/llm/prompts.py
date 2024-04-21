@@ -39,15 +39,15 @@ def get_prompt():
     return FewShotPromptWithTemplates(
         examples=few_shot_data.examples,
         example_prompt=PromptTemplate(
-            template="Valid players:\n{{ valid_players }}\n\nPassage: {{ passage }}\n\nJSON: {{ output }}\n",
-            input_variables=["valid_players", "passage", "output"],
+            template="Valid players:\n{{ players_list }}\n\nPassage: {{ passage }}\n\nJSON: {{ output }}\n",
+            input_variables=["players_list", "passage", "output"],
             template_format="jinja2",
         ),
-        input_variables=["valid_players", "passage"],
+        input_variables=["players_list", "passage"],
         prefix=PromptTemplate(template=prompt_prefix, input_variables=[], template_format="jinja2"),
         suffix=PromptTemplate(
-            template="Valid players:\n{{ valid_players }}\n\nPassage: {{ passage }}\n\nJSON:",
-            input_variables=["valid_players", "passage"],
+            template="Valid players:\n{{ players_list }}\n\nPassage: {{ passage }}\n\nJSON:",
+            input_variables=["players_list", "passage"],
             template_format="jinja2",
         ),
         template_format="jinja2",
@@ -56,4 +56,4 @@ def get_prompt():
 
 if __name__ == "__main__":
     # test prompt generation
-    print(get_prompt().format(valid_players="foo", passage="bar"))
+    print(get_prompt().format(players_list="foo", passage="bar"))
