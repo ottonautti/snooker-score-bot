@@ -31,7 +31,7 @@ class SnookerSheet(gspread.Spreadsheet):
             scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         )
         self.client = gspread.authorize(credentials)
-        super().__init__(self.client, {"id": spreadsheet_id})
+        super().__init__(self.client.http_client, {"id": spreadsheet_id})
 
         # check that expected named ranges exist
         for name in self.named_ranges.values():

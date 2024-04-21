@@ -6,9 +6,9 @@ import os
 from typing import Literal
 
 from langchain.callbacks import StdOutCallbackHandler
-from langchain.chains import LLMChain
-from langchain.llms.openai import OpenAI
-from langchain.llms.vertexai import VertexAI
+from langchain.chains.llm import LLMChain
+from langchain_google_vertexai import VertexAI
+from langchain_openai import OpenAI
 
 from . import prompts
 
@@ -40,13 +40,17 @@ class SnookerScoresLLM:
             prompt = prompts.get_prompt()
         self.prompt = prompt
 
-    def infer(self, passage: str, valid_players: str) -> dict:
-        llm_chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose, callbacks=[stdout_handler])
-        llm_output_raw = llm_chain.run(valid_players=valid_players, passage=passage)
+    def infer(self, passage: str, valid_players_txt: str) -> dict:
+        chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose, callbacks=[stdout_handler])
+        output = chain.invoke(
+            {
+                "passage": passage,
+                "players_list": valid_players_txt,
+            }
+        )
         try:
-            llm_output = json.loads(llm_output_raw) or {}
-            logging.info(f"{self.llm.__class__.__name__} output: {llm_output}")
-            output = {"passage": passage, **llm_output}
-        except json.JSONDecodeError as e:
-            raise ValueError(f"LLM did not output valid JSON: {llm_output_raw}") from e
-        return output
+            logging.info(f"{self.llm.__class__.__name__} output: {output['text']}")
+            deserialized = json.loads(output["text"])
+        except KeyError as e:
+            raise RuntimeError(f"Unexpected output from LLM: {output}") from e
+        return deserialized
