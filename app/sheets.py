@@ -61,7 +61,7 @@ class SnookerSheet(gspread.Spreadsheet):
         return "\n".join([plr._gn for plr in self.get_current_players()])
 
     def get_current_round_url(self) -> str:
-        """Get URL of current round"""
+        """Get URL of current round."""
         rounds = self.values_get(self.named_ranges["rounds"]).get("values")
         # [['1', '6.9.2023', '8.10.2023'], ['2', '10.10.2023', '12.11.2023'], ...
         today = datetime.now().date()
@@ -71,10 +71,14 @@ class SnookerSheet(gspread.Spreadsheet):
             if start_date <= today <= end_date:
                 sheet_name = f"ROUND {r[0]}"
                 try:
-                    return self.worksheet(sheet_name).url
+                    url = self.worksheet(sheet_name).url
+                    break
                 except gspread.WorksheetNotFound:
                     return None
-
+        else:
+            # no current round, fall back on sheet URL
+            url = self.url
+        return url
 
     @staticmethod
     def days_since_1900(timestamp) -> str:
