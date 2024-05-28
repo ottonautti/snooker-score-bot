@@ -1,6 +1,8 @@
+from functools import partial
+
 import pytest
 from pydantic import ValidationError
-from functools import partial
+
 from app.models import SnookerBreak, SnookerMatch, SnookerPlayer, get_match_model
 
 player1 = SnookerPlayer(name="Player Yksi", group="L1")
@@ -53,8 +55,19 @@ def test_invalid_match_score_raises():
         match = match_model_for_testing(
             group="L1", player1="Player Yksi", player2="Player Kaksi", player1_score=3, player2_score=1
         )
-        # match.valid_score(match.player1_score)
+        match.valid_score(match.player1_score)
 
+def test_players_not_from_correct_group_raises():
+    with pytest.raises(ValidationError):
+        match = match_model_for_testing(
+            group="L2",
+            player1="Player Yksi",
+            player2="Player Kaksi",
+            player1_score=2,
+            player2_score=1,
+            breaks=[{"player": "Player Yksi", "points": 50}, {"player": "Player Kaksi", "points": 60}],
+        )
+        match.check_players()
 
 def test_breaks_are_by_match_players_raises():
     with pytest.raises(ValidationError):
@@ -69,7 +82,7 @@ def test_breaks_are_by_match_players_raises():
                 {"player": "Player Kolme", "points": 100},
             ],
         )
-        # match.breaks_are_by_match_players()
+        match.breaks_are_by_match_players()
 
 
 def test_match_summary():

@@ -98,15 +98,21 @@ class SnookerMatch(BaseModel):
 
     @model_validator(mode="after")
     def check_players(self):
-        """Players have to belong to valid players. Players have to be from the same group. Players can not be the same player."""
+        """Asserts:
+        * Players belong to valid players.
+        * The asserted `group` matches that of players.
+        * Players can not be the same player.
+        """
 
         # Check that both players are in the list of valid players
-        assert self.player1 in self.valid_players, f"{self.player1} is not a valid player"
-        assert self.player2 in self.valid_players, f"{self.player2} is not a valid player"
+        assert self.player1 in self.valid_players, f"Player '{self.player1}' is not a valid player"
+        assert self.player2 in self.valid_players, f"Player '{self.player2}' is not a valid player"
 
-        # Check that both players are from the same group
-        assert self.player1.group == self.player2.group, "Players are not from the same group"
-
+        # Check that the group of the match is the same as the group of the players
+        assert self.group == self.player1.group, f"Player '{self.player1}' is not in group {self.group}"
+        assert self.group == self.player2.group, f"Player '{self.player2}' is not in group {self.group}"
+        assert self.player1.group == self.player2.group
+        
         # Check that the two players are not the same
         assert self.player1 != self.player2, "Players cannot be the same player"
 
@@ -179,6 +185,7 @@ class SnookerMatch(BaseModel):
             valid_players=valid_players,
             max_score=max_score,
         )
+
 
 # TODO: decouple model customization and model instantiation
 def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs) -> "SnookerMatch":
