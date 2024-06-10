@@ -12,7 +12,9 @@ from pydantic import (
 )
 from pydantic.fields import Field
 
-from .settings import settings
+from .settings import get_settings
+
+settings = get_settings()
 
 
 class SnookerPlayer(BaseModel):
@@ -112,7 +114,7 @@ class SnookerMatch(BaseModel):
         assert self.group == self.player1.group, f"Player '{self.player1}' is not in group {self.group}"
         assert self.group == self.player2.group, f"Player '{self.player2}' is not in group {self.group}"
         assert self.player1.group == self.player2.group
-        
+
         # Check that the two players are not the same
         assert self.player1 != self.player2, "Players cannot be the same player"
 

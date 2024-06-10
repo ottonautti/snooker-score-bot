@@ -5,20 +5,23 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import app, get_sheet, get_twilio
+from app.main import app
 from app.models import SnookerPlayer
+from app.settings import Settings
 from app.sheets import SnookerSheet
 
 from ..llm.fewshots_mock import MockFewShotData
 from ..llm.inference import SnookerScoresLLM
 
+
+class TestSettings(Settings):
+    SHEETID = "12zoI6AQRvqB_t4rrmhgwsRT4RAlbJnKv3ovZgI_NtOY"
+
+
+TEST_SETTINGS = TestSettings()
+
 os.environ["TWILIO_NO_SEND"] = "True"
 
-# TODO: test writing to Google sheet, but not on production file
-GOOGLESHEETS_SHEETID_PROD = os.environ["GOOGLESHEETS_SHEETID"]
-GOOGLESHEETS_SHEETID_TEST = "12zoI6AQRvqB_t4rrmhgwsRT4RAlbJnKv3ovZgI_NtOY"
-
-PRODUCTION_SHEET = SnookerSheet(spreadsheet_id=GOOGLESHEETS_SHEETID_PROD)
 LLM_GOOGLE = SnookerScoresLLM(llm="vertexai")
 LLM_OPENAI = SnookerScoresLLM(llm="openai")
 
@@ -31,70 +34,55 @@ class MockTwilio:
 
 class MockSheet(SnookerSheet):
     def __init__(self):
-        super().__init__(spreadsheet_id=GOOGLESHEETS_SHEETID_TEST)
+        super().__init__(spreadsheet_id=TEST_SETTINGS.SHEETID)
 
     def get_current_players(self) -> list[SnookerPlayer]:
         return MockFewShotData.players
 
 
-app.dependency_overrides = {
-    get_twilio: MockTwilio,
-    get_sheet: MockSheet,
-}
+client = TestClient(app)
+client.app.SETTINGS = TEST_SETTINGS
+
+MOCK_TWILIO = MockTwilio()
 
 
-@pytest.fixture
-def client_with_mocks():
-    with TestClient(app) as test_client:
-        yield test_client
-
-
-def test_app_dryrun(client_with_mocks):
+def test_app_dryrun(monkeypatch):
     """Dryrun tests:
 
     * App can start up
     * App can get players from production sheet
     * App can call LLM.
     """
-    # Arrange
-
-    from app.main import app
-
-    # otherwise mock sheet is used
-    overrides = app.dependency_overrides.copy()
-    del app.dependency_overrides[get_sheet]
-
     # Act
     try:
-        response = client_with_mocks.post(
+        response = client.post(
             "/scores",
             data={
                 "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
                 "From": "+358123456789",
             },
         )
-    finally:
-        # revert dependency overrides
-        app.dependency_overrides = overrides
+    except Exception as e:
+        logging.error(e)
 
     assert response
 
 
-def test_e2e(client_with_mocks: TestClient):
+def test_e2e(monkeypatch):
     """Tests that a successful request is handled correctly.
 
     LLM is mocked to return a mock match."""
 
     # Arrange
+    monkeypatch.setattr("app.main.SnookerSheet", MockSheet)
     today = datetime.today()
-    sheet = SnookerSheet(spreadsheet_id=GOOGLESHEETS_SHEETID_TEST)
     # count number of matches before test
-    num_matches_before = len(sheet.matches_sheet.get_all_values())
+    num_matches_before = len(MockSheet.matches_sheet.get_all_values())
 
     # Act
 
     # make the LLM return the mock match
-    response = client_with_mocks.post(
+    response = client.post(
         "/scores",
         data={
             "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
@@ -123,7 +111,7 @@ def test_e2e(client_with_mocks: TestClient):
     }
 
     # check that the match was recorded to the sheet
-    num_matches_after = len(sheet.matches_sheet.get_all_values())
+    num_matches_after = len(MOCK_SHEET.matches_sheet.get_all_values())
     assert num_matches_after == num_matches_before + 1
 
 
@@ -135,3 +123,17 @@ def test_e2e(client_with_mocks: TestClient):
 # def test_identical_inference_openai_vs_goole(passage: str):
 #     production_players = PRODUCTION_SHEET.players_txt
 #     assert LLM_OPENAI.infer(passage, production_players) == LLM_GOOGLE.infer(passage, production_players)
+
+
+def adhoc_llm_tests(client: TestClient):
+
+    response = client.post(
+        "/scores",
+        data={
+            "Body": "Chiodo-jani hauta-aho 2-0",
+            "From": "+358123456789",
+        },
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    # log response
+    pytest.set_trace()

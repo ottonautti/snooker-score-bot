@@ -1,4 +1,5 @@
 """FastAPI app for recording snooker match outcomes reported by users."""
+
 import json
 import logging
 import os
@@ -12,16 +13,22 @@ from pydantic import ValidationError
 
 from .llm.inference import SnookerScoresLLM
 from .models import get_match_model
-from .settings import messages, settings
+from .settings import get_settings, messages
 from .sheets import SnookerSheet
 from .twilio_client import Twilio, TwilioInboundMessage
+
+
+DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
+
+
+SETTINGS = get_settings()
 
 
 def setup_logging():
     """Sets up logging for the app"""
     client = google.cloud.logging.Client()
     client.setup_logging()  # registers handler with built-in logging
-    if settings.DEBUG:  # when running locally, output to stdout
+    if DEBUG:  # when running locally, output to stdout
         logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
         logging.getLogger().setLevel(logging.INFO)
 
@@ -44,34 +51,34 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
 
 
-async def get_twilio():
-    return Twilio()
-
-
-async def get_sheet():
-    sheet_id = os.environ.get("GOOGLESHEETS_SHEETID")
-    return SnookerSheet(sheet_id)
-
-
-async def get_llm():
-    return SnookerScoresLLM(llm=settings.LLM)
+twilio = Twilio()
 
 
 @app.post("/scores")
-async def handle_score(
-    twilio: Twilio = Depends(get_twilio),
-    sheet: SnookerSheet = Depends(get_sheet),
+async def post_scores(
     msg=Depends(parse_twilio_msg),
-    llm=Depends(get_llm),
 ):
+    """Handles inbound scores"""
+    return await handle_scores(settings=SETTINGS, msg=msg)
+
+
+@app.post("/scores/sixred24")
+async def post_scores_sixred24(
+    msg=Depends(parse_twilio_msg),
+):
+    """Handles inbound scores for SixRed24 league."""
+    return await handle_scores(settings=get_settings(sixred24=True), msg=msg)
+
+
+async def handle_scores(msg: TwilioInboundMessage, settings):
+    sheet = SnookerSheet(settings.SHEETID)
+    llm = SnookerScoresLLM(llm=settings.LLM)
     """Handles inbound scores"""
     logging.info("Received message from %s: %s", msg.sender, msg.body)
     valid_players = sheet.get_current_players()
     try:
         output: dict = llm.infer(passage=msg.body, valid_players_txt=sheet.players_txt)
-        snooker_match = get_match_model(
-            valid_players=valid_players, max_score=settings.MAX_SCORE, **output
-        )
+        snooker_match = get_match_model(valid_players=valid_players, max_score=settings.MAX_SCORE, **output)
     except ValidationError as err:
         twilio.send_message(msg.sender, messages.INVALID)
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
@@ -90,17 +97,21 @@ async def handle_score(
 
 
 @app.get("/sheet")
-async def handle_sheet(sheet: SnookerSheet = Depends(get_sheet)):
+async def redirect_to_sheet(settings=Depends(SETTINGS)):
     """Redirects to the Google Sheet, tab corresponding to current round."""
+    sheet = SnookerSheet(settings.SHEETID)
     url = sheet.get_current_round_url()
     if not url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No current round")
     return RedirectResponse(url=url)
 
-@app.get("/info")
-async def handle_info():
-    """Redirects to league info page."""
-    return RedirectResponse(url=settings.INFO_SHORTLINK)
+
+@app.get("/sheet/sixred24")
+async def redirect_to_sheet_sixred24():
+    """Redirects to the Google Sheet of the SixRed24 league."""
+    settings = get_settings(sixred24=True)
+    sheet = SnookerSheet(settings.SHEETID)
+    return RedirectResponse(url=sheet.url)
 
 
 @app.exception_handler(Exception)

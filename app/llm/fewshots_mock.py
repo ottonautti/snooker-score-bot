@@ -123,7 +123,7 @@ class MockFewShotData(FewShotData):
             },
             {
                 "valid_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Anneli 2 - Tero 1, ei breikkejä",
+                "passage": "Ahonen 2 - Tero 1, ei breikkejä",
                 "output": to_json(
                     {
                         "group": "L4",
