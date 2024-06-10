@@ -56,6 +56,11 @@ async def get_sheet():
 async def get_llm():
     return SnookerScoresLLM(llm=settings.LLM)
 
+def boilerplate_reply(twilio: Twilio, msg: TwilioInboundMessage):
+    message = "Tulosbotti ei ole tällä hetkellä käytössä. Ilmoita Masters-tulokset suoraan WhatsApp-ryhmään: https://chat.whatsapp.com/L71j99JSEBi80rT5WlF4BR"
+    twilio.send_message(msg.sender, message)
+    return JSONResponse(status_code=status.HTTP_200_OK, content={"status": "OK"})
+
 
 @app.post("/scores")
 async def handle_score(
@@ -66,6 +71,7 @@ async def handle_score(
 ):
     """Handles inbound scores"""
     logging.info("Received message from %s: %s", msg.sender, msg.body)
+    return boilerplate_reply(twilio, msg)  # TEMPORARY
     valid_players = sheet.get_current_players()
     try:
         output: dict = llm.infer(passage=msg.body, valid_players_txt=sheet.players_txt)
