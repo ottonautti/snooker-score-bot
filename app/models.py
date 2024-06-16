@@ -14,7 +14,7 @@ from pydantic.fields import Field
 
 from .settings import get_settings
 
-settings = get_settings()
+settings = get_settings(sixred24=True)
 
 
 class SnookerPlayer(BaseModel):
