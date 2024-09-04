@@ -61,8 +61,8 @@ class SnookerMatch(BaseModel):
 
     date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
     group: str
-    player1: SnookerPlayer
-    player2: SnookerPlayer
+    player1: Union[SnookerPlayer, str]
+    player2: Union[SnookerPlayer, str]
     player1_score: int
     player2_score: int
     breaks: list[SnookerBreak] = Field(default_factory=list)
@@ -97,6 +97,14 @@ class SnookerMatch(BaseModel):
         assert score >= 0, "score must be greater than or equal to 0"
         assert score <= cls.max_score, f"score must be less than or equal to {cls.max_score}"
         return score
+
+    @field_validator("player1", "player2")
+    def lookup_players(cls, player):
+        """Look up the player if it is a string"""
+        if isinstance(player, str):
+            return next((p for p in cls.valid_players if p.name == player), None)
+        return player
+
 
     @model_validator(mode="after")
     def check_players(self):
@@ -211,17 +219,15 @@ def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int]
         max_score=max_score,
     )
 
-    # compose the players, breaks and finally the match from the inputs
-    player1 = next((player for player in valid_players if player.name == inputs.get("player1")), None)
-    player2 = next((player for player in valid_players if player.name == inputs.get("player2")), None)
     breaks = []
     for b in inputs.get("breaks", []):
         player = next((player for player in valid_players if player.name == b.get("player")), None)
         breaks.append(SnookerBreak(player=player, points=b.get("points")))
+
     return match_model(
         group=inputs.get("group"),
-        player1=player1,
-        player2=player2,
+        player1=inputs.get("player1"),
+        player2=inputs.get("player2"),
         player1_score=inputs.get("player1_score"),
         player2_score=inputs.get("player2_score"),
         breaks=breaks,
