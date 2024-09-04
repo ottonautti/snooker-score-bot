@@ -21,7 +21,7 @@ from .twilio_client import Twilio, TwilioInboundMessage
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
 
 
-SETTINGS = get_settings(sixred24=True)
+SETTINGS = get_settings()
 
 
 def setup_logging():
@@ -96,20 +96,21 @@ async def handle_scores(msg: TwilioInboundMessage, settings):
     return JSONResponse(status_code=status.HTTP_201_CREATED, content=content)
 
 
-# @app.get("/sheet")
-# async def redirect_to_sheet():
-#     """Redirects to the Google Sheet, tab corresponding to current round."""
-#     sheet = SnookerSheet(SETTINGS.SHEETID)
-#     url = sheet.get_current_round_url()
-#     if not url:
-#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No current round")
-#     return RedirectResponse(url=url)
+@app.get("/sheet")
+async def redirect_to_sheet(settings=Depends(SETTINGS)):
+    """Redirects to the Google Sheet, tab corresponding to current round."""
+    sheet = SnookerSheet(settings.SHEETID)
+    url = sheet.get_current_round_url()
+    if not url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No current round")
+    return RedirectResponse(url=url)
 
 
 @app.get("/sheet/sixred24")
 async def redirect_to_sheet_sixred24():
     """Redirects to the Google Sheet of the SixRed24 league."""
-    sheet = SnookerSheet(SETTINGS.SHEETID)
+    settings = get_settings(sixred24=True)
+    sheet = SnookerSheet(settings.SHEETID)
     return RedirectResponse(url=sheet.url)
 
 
