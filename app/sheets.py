@@ -19,10 +19,11 @@ DATE_FORMAT = "%d.%m.%Y"
 
 
 class SnookerSheet(gspread.Spreadsheet):
-    results_sheet_name = "_results"
+    results_sheet_name = "_matches"
     breaks_sheet_name = "_breaks"
     named_ranges = {
         "players": "nr_currentPlayers",
+        "rounds": "nr_rounds"
     }
 
     def __init__(self, spreadsheet_id: str):
@@ -52,7 +53,7 @@ class SnookerSheet(gspread.Spreadsheet):
         players_rows = self.values_get(self.named_ranges["players"]).get("values")
         if not players_rows:
             return RuntimeError("No players found in spreadsheet")
-        header_order = ["group", "name"]
+        header_order = ["name", "group"]
         return [
             SnookerPlayer(name=plr[header_order.index("name")], group=plr[header_order.index("group")])
             for plr in players_rows
