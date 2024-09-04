@@ -1,12 +1,12 @@
 import logging
 import os
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.models import SnookerPlayer
 from app.settings import Settings
 from app.sheets import SnookerSheet
 
@@ -17,8 +17,9 @@ from ..llm.inference import SnookerScoresLLM
 class TestSettings(Settings):
     SHEETID = "12zoI6AQRvqB_t4rrmhgwsRT4RAlbJnKv3ovZgI_NtOY"
 
-
 TEST_SETTINGS = TestSettings()
+
+TEST_SHEET = SnookerSheet(TEST_SETTINGS.SHEETID)
 
 os.environ["TWILIO_NO_SEND"] = "True"
 
@@ -31,13 +32,6 @@ class MockTwilio:
         logging.info("MockTwilio would send : %s", kwargs)
         return None
 
-
-class MockSheet(SnookerSheet):
-    def __init__(self):
-        super().__init__(spreadsheet_id=TEST_SETTINGS.SHEETID)
-
-    def get_current_players(self) -> list[SnookerPlayer]:
-        return MockFewShotData.players
 
 
 client = TestClient(app)
@@ -74,45 +68,45 @@ def test_e2e(monkeypatch):
     LLM is mocked to return a mock match."""
 
     # Arrange
-    monkeypatch.setattr("app.main.SnookerSheet", MockSheet)
     today = datetime.today()
     # count number of matches before test
-    num_matches_before = len(MockSheet.matches_sheet.get_all_values())
+    num_matches_before = len(TEST_SHEET.matches_sheet.get_all_values())
 
     # Act
 
     # make the LLM return the mock match
-    response = client.post(
-        "/scores",
-        data={
-            "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
-            "From": "+358123456789",
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
+    with patch.object(TEST_SHEET, "get_current_players", return_value=MockFewShotData.players):
+        response = client.post(
+            "/scores",
+            data={
+                "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
+                "From": "+358123456789",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
 
-    # Assert
-    assert response.status_code == 201
-    assert response.json() == {
-        "status": "Match recorded",
-        "match": {
-            "passage_language": "fin",
-            "date": today.strftime("%Y-%m-%d"),
-            "group": "L1",
-            "player1": "Huhtala Katja",
-            "player2": "Andersson Leila",
-            "player1_score": 2,
-            "player2_score": 1,
-            "winner": "Huhtala Katja",
-            "highest_break": 45,
-            "highest_break_player": "Huhtala Katja",
-            "breaks": [{"date": today.strftime("%Y-%m-%d"), "player": "Huhtala Katja", "points": 45}],
-        },
-    }
+        # Assert
+        assert response.status_code == 201
+        assert response.json() == {
+            "status": "Match recorded",
+            "match": {
+                "passage_language": "fin",
+                "date": today.strftime("%Y-%m-%d"),
+                "group": "L1",
+                "player1": "Huhtala Katja",
+                "player2": "Andersson Leila",
+                "player1_score": 2,
+                "player2_score": 1,
+                "winner": "Huhtala Katja",
+                "highest_break": 45,
+                "highest_break_player": "Huhtala Katja",
+                "breaks": [{"date": today.strftime("%Y-%m-%d"), "player": "Huhtala Katja", "points": 45}],
+            },
+        }
 
-    # check that the match was recorded to the sheet
-    num_matches_after = len(MOCK_SHEET.matches_sheet.get_all_values())
-    assert num_matches_after == num_matches_before + 1
+        # check that the match was recorded to the sheet
+        num_matches_after = len(TEST_SHEET.matches_sheet.get_all_values())
+        assert num_matches_after == num_matches_before + 1
 
 
 # def read_passages():
