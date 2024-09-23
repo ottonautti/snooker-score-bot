@@ -38,7 +38,9 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     """Returns inbound Twilio message details from request form data"""
     # expect application/x-www-form-urlencoded
     if req.headers["Content-Type"] != "application/x-www-form-urlencoded":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Type")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Type"
+        )
     form_data = await req.form()
     body = form_data.get("Body")
     sender = form_data.get("From")
@@ -57,14 +59,18 @@ async def handle_scores(msg: TwilioInboundMessage, settings):
     valid_players = sheet.get_current_players()
     try:
         output: dict = llm.infer(passage=msg.body, valid_players_txt=sheet.players_txt)
-        snooker_match = get_match_model(valid_players=valid_players, max_score=settings.MAX_SCORE, **output)
+        snooker_match = get_match_model(
+            valid_players=valid_players, max_score=settings.MAX_SCORE, **output
+        )
     except ValidationError as err:
         TWILIO.send_message(msg.sender, messages.INVALID)
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
         detail = {"llm_output": output, "error_messages": error_messages}
         logging.error(json.dumps(detail))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail)
-    sheet.record_match(values=snooker_match.model_dump(), passage=msg.body, sender=msg.sender)
+    sheet.record_match(
+        values=snooker_match.model_dump(), passage=msg.body, sender=msg.sender
+    )
     for break_ in snooker_match.breaks:
         sheet.record_break(break_.model_dump(), passage=msg.body, sender=msg.sender)
     reply = snooker_match.summary(snooker_match.passage_language)
@@ -79,10 +85,12 @@ async def handle_scores(msg: TwilioInboundMessage, settings):
 async def handle_exception(req: Request, exc: Exception):
     logging.exception(exc)
     if not isinstance(exc, HTTPException):
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+        return JSONResponse(
+            status_code=500, content={"detail": "Internal server error"}
+        )
 
 
-@app.post("/scores")
+@app.post("/scores/sms")
 async def post_scores(
     msg=Depends(parse_twilio_msg),
 ):
@@ -90,7 +98,7 @@ async def post_scores(
     return await handle_scores(settings=SETTINGS, msg=msg)
 
 
-@app.post("/scores/sixred24")
+@app.post("/scores/sms/sixred24")
 async def post_scores_sixred24(
     msg=Depends(parse_twilio_msg),
 ):
@@ -103,6 +111,13 @@ async def handle_exception(req: Request, exc: Exception):
     logging.exception(exc)
     if not isinstance(exc, HTTPException):
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+@app.get("/matchups")
+async def get_matchups(settings=Depends(SETTINGS)):
+    """Returns the current matchups."""
+    sheet = SnookerSheet(settings.SHEETID)
+    return sheet.get_matchups()
 
 
 setup_logging()
