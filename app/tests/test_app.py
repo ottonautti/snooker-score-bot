@@ -17,6 +17,7 @@ from ..llm.inference import SnookerScoresLLM
 class TestSettings(Settings):
     SHEETID = "12zoI6AQRvqB_t4rrmhgwsRT4RAlbJnKv3ovZgI_NtOY"
 
+
 TEST_SETTINGS = TestSettings()
 
 TEST_SHEET = SnookerSheet(TEST_SETTINGS.SHEETID)
@@ -31,7 +32,6 @@ class MockTwilio:
     def send_message(self, *args, **kwargs):
         logging.info("MockTwilio would send : %s", kwargs)
         return None
-
 
 
 client = TestClient(app)
@@ -50,7 +50,7 @@ def test_app_dryrun(monkeypatch):
     # Act
     try:
         response = client.post(
-            "/scores",
+            "/scores/sms",
             data={
                 "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
                 "From": "+358123456789",
@@ -70,14 +70,16 @@ def test_e2e(monkeypatch):
     # Arrange
     today = datetime.today()
     # count number of matches before test
-    num_matches_before = len(TEST_SHEET.matches_sheet.get_all_values())
+    num_matches_before = len(TEST_SHEET.matchups_sheet.get_all_values())
 
     # Act
 
     # make the LLM return the mock match
-    with patch.object(TEST_SHEET, "get_current_players", return_value=MockFewShotData.players):
+    with patch.object(
+        TEST_SHEET, "get_current_players", return_value=MockFewShotData.players
+    ):
         response = client.post(
-            "/scores",
+            "/scores/sms",
             data={
                 "Body": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
                 "From": "+358123456789",
@@ -100,12 +102,18 @@ def test_e2e(monkeypatch):
                 "winner": "Huhtala Katja",
                 "highest_break": 45,
                 "highest_break_player": "Huhtala Katja",
-                "breaks": [{"date": today.strftime("%Y-%m-%d"), "player": "Huhtala Katja", "points": 45}],
+                "breaks": [
+                    {
+                        "date": today.strftime("%Y-%m-%d"),
+                        "player": "Huhtala Katja",
+                        "points": 45,
+                    }
+                ],
             },
         }
 
         # check that the match was recorded to the sheet
-        num_matches_after = len(TEST_SHEET.matches_sheet.get_all_values())
+        num_matches_after = len(TEST_SHEET.matchups_sheet.get_all_values())
         assert num_matches_after == num_matches_before + 1
 
 
@@ -122,7 +130,7 @@ def test_e2e(monkeypatch):
 def adhoc_llm_tests(client: TestClient):
 
     response = client.post(
-        "/scores",
+        "/scores/sms",
         data={
             "Body": "Chiodo-jani hauta-aho 2-0",
             "From": "+358123456789",
