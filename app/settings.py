@@ -35,7 +35,7 @@ class SixRed24Settings(Settings):
 
 class HouseLeagueSettings(Settings):
     MAX_SCORE = 2  # Matches are best of 3
-    SHEETID = "1R2E2bx-0bj33z7jurkFAQED-24mgDQzYYmnm68lk5bY"
+    SHEETID = os.getenv("GOOGLESHEETS_SHEETID", "1R2E2bx-0bj33z7jurkFAQED-24mgDQzYYmnm68lk5bY")
 
 
 def get_settings(sixred24: bool = False):
