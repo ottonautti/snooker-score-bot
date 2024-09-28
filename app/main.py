@@ -126,11 +126,11 @@ async def redirect_to_sheet_sixred24():
     return RedirectResponse(url=sheet.url)
 
 
-@app.get("/matchups")
-async def get_matchups(settings=Depends(SETTINGS)):
-    """Returns the current matchups."""
+@app.get("/fixtures")
+async def get_fixtures(settings=Depends(SETTINGS)):
+    """Returns the current fixtures."""
     sheet = SnookerSheet(settings.SHEETID)
-    return sheet.get_matchups()
+    return sheet.get_fixtures()
 
 
 setup_logging()
