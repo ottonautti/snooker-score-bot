@@ -5,12 +5,12 @@ import random
 import string
 from datetime import datetime
 from itertools import combinations
+from typing import List, Tuple
 
 import google.auth
 import gspread
 import gspread.utils
 import pytz
-from pydantic import BaseModel
 from pydantic.fields import Field
 
 from .models import MatchOutcome, SnookerPlayer
@@ -23,10 +23,10 @@ def get_helsinki_timestamp():
     return datetime.now(pytz.timezone("Europe/Helsinki")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-class Matchup(MatchOutcome):
-    """Interface for Sheets matchup data."""
+class MatchFixture(MatchOutcome):
+    """Interface for match fixture data."""
 
-    id_: str = Field(default_factory=lambda: Matchup.generate_id(), alias="id")
+    id_: str = Field(default_factory=lambda: MatchFixture.generate_id(), alias="id")
 
     @property
     def winner(self) -> str:
@@ -35,17 +35,12 @@ class Matchup(MatchOutcome):
         return self.player1 if self.player1_score > self.player2_score else self.player2
 
     @staticmethod
-    def generate_id(length: int = 6) -> str:
-        """Generate a random ID for the matchup."""
-        return "".join(
-            random.choices("abcdefghjkmnpqrstuvwxyz" + string.digits, k=length)
-        )
+    def generate_id(length: int = 5) -> str:
+        """Generate a random ID for the fixture."""
+        return "".join(random.choices("abcdefghjkmnpqrstuvwxyz" + string.digits, k=length))
 
 
 class SnookerSheet:
-    matchups_sheet_name = "_matchups"
-    breaks_sheet_name = "_breaks"
-    named_ranges = {"players": "nr_currentPlayers", "rounds": "nr_rounds"}
 
     def __init__(self, spreadsheet_id: str):
         credentials, project_id = google.auth.default(
@@ -57,24 +52,36 @@ class SnookerSheet:
         self.client = gspread.authorize(credentials)
         self.ss = self.client.open_by_key(spreadsheet_id)
 
-        # check that expected named ranges exist
-        for name in self.named_ranges.values():
-            if not name in [nr["name"] for nr in self.ss.list_named_ranges()]:
-                raise RuntimeError(f"Named range `{name}` not found in spreadsheet")
+        # assert that well-known assets exist
+        assert self.fixtures_sheet
+        assert self.breaks_sheet
+        assert self.current_round
+        assert len(self.current_players) > 0
 
-        # check that expected sheets exist
-        self.matchups_sheet = self.ss.worksheet(self.matchups_sheet_name)
-        self.breaks_sheet = self.ss.worksheet(self.breaks_sheet_name)
+    @property
+    def fixtures_sheet(self) -> gspread.Worksheet:
+        return self.ss.worksheet("_fixtures")
 
-    def _unhide_all_columns(self, ws: gspread.Worksheet):
-        """Unhide all columns in worksheet.
+    @property
+    def breaks_sheet(self) -> gspread.Worksheet:
+        return self.ss.worksheet("_breaks")
 
-        This is necessary for data entry to work."""
-        ws.unhide_columns(0, 20)
+    @property
+    def current_round(self) -> int:
+        """Get the current round number."""
+        rounds = self.ss.values_get("nr_rounds").get("values")
+        today = datetime.now().date()
+        for r in rounds:
+            start_date = datetime.strptime(r[1], DATE_FORMAT).date()
+            end_date = datetime.strptime(r[2], DATE_FORMAT).date()
+            if start_date <= today <= end_date:
+                return int(r[0])
+        return None
 
-    def get_current_players(self) -> list[SnookerPlayer]:
+    @property
+    def current_players(self) -> List[SnookerPlayer]:
         """Get list of current players from spreadsheet."""
-        players_rows = self.ss.values_get(self.named_ranges["players"]).get("values")
+        players_rows = self.ss.values_get("nr_currentPlayers").get("values")
         if not players_rows:
             return RuntimeError("No players found in spreadsheet")
         header_order = ["name", "group"]
@@ -89,19 +96,13 @@ class SnookerSheet:
     @property
     def players_txt(self) -> str:
         """Newline-separated list of current players"""
-        return "\n".join([plr._gn for plr in self.get_current_players()])
+        return "\n".join([plr.__llm_str__() for plr in self.current_players])
 
-    @property
-    def current_round(self) -> int:
-        """Get the current round number."""
-        rounds = self.ss.values_get(self.named_ranges["rounds"]).get("values")
-        today = datetime.now().date()
-        for r in rounds:
-            start_date = datetime.strptime(r[1], DATE_FORMAT).date()
-            end_date = datetime.strptime(r[2], DATE_FORMAT).date()
-            if start_date <= today <= end_date:
-                return int(r[0])
-        return None
+    def _unhide_all_columns(self, ws: gspread.Worksheet):
+        """Unhide all columns in worksheet.
+
+        This is necessary for data entry to work."""
+        ws.unhide_columns(0, 20)
 
     def get_current_round_url(self) -> str:
         """Get URL of current round."""
@@ -126,7 +127,7 @@ class SnookerSheet:
 
     def record_match(self, values: dict, passage: str, sender: str = None):
         """Record match to spreadsheet"""
-        self._unhide_all_columns(self.matchups_sheet)
+        self._unhide_all_columns(self.fixtures_sheet)
         timestamp = get_helsinki_timestamp()
         log = r"\r".join([timestamp, str(sender), passage])
         ordered_values = [
@@ -141,13 +142,13 @@ class SnookerSheet:
             values["winner"],
             log,
         ]
-        self.matchups_sheet.append_row(ordered_values)
+        self.fixtures_sheet.append_row(ordered_values)
 
         return True
 
     def record_break(self, break_: dict, passage: str = None, sender: str = None):
         """Record break to spreadsheet"""
-        self._unhide_all_columns(self.matchups_sheet)
+        self._unhide_all_columns(self.fixtures_sheet)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         # excel fields are: timestamp	from	passage	player	break	date    round
         ordered_values = [
@@ -163,85 +164,84 @@ class SnookerSheet:
 
         return True
 
-    def get_matchups(self, round_: int) -> list[Matchup]:
-        matchups_data = self.ss.worksheet(self.matchups_sheet_name).get_all_records()
-        return [Matchup(**m) for m in matchups_data if m["round"] == round_]
+    def get_fixtures(self, round_: int) -> List[MatchFixture]:
+        if not round_:
+            round_ = self.current_round
+        fixtures_data = self.fixtures_sheet.get_all_records()
+        return [MatchFixture(**m) for m in fixtures_data if m["round"] == round_]
 
-    def add_matchups(self, round_: int):
-        """Append _matchups sheet with matchups for the current round."""
+    def add_fixtures(self, round_: int):
+        """Append _fixtures sheet with fixtures for the current round."""
         # get players groupwise
-        players = self.get_current_players()
+        players = self.current_players
 
         # get unique groups
         groups = sorted(set([p.group for p in players]))
         column_order = ["id", "round", "group", "player1", "player2"]
 
-        # get matchups for each group
-        matchups = []
+        # get fixtures for each group
+        fixtures = []
         for group in groups:
             group_players = [p for p in players if p.group == group]
             for p1, p2 in combinations(group_players, 2):
-                matchup = Matchup(
-                    id=Matchup.generate_id(),
+                fixture = MatchFixture(
+                    id=MatchFixture.generate_id(),
                     round=round_,
                     group=group,
                     player1=p1.name,
                     player2=p2.name,
                 )
-                matchups.append(matchup)
+                fixtures.append(fixture)
 
-        # append matchups to sheet
-        values = [matchup.dict(by_alias=True) for matchup in matchups]
-        self.ss.worksheet(self.matchups_sheet_name).append_rows(values)
+        # append fixtures to sheet
+        values = [fixture.dict(by_alias=True) for fixture in fixtures]
+        self.fixtures_sheet.append_rows(values)
 
-    def get_matchup(self, round_: int, player1: str, player2: str) -> Matchup:
-        """Lookup matchup by round and players."""
-        matchups = self.get_matchups(round_)
-        for m in matchups:
+    def get_fixture(self, round_: int, player1: str, player2: str) -> MatchFixture:
+        """Lookup fixture by round and players."""
+        fixtures = self.get_fixtures(round_)
+        for m in fixtures:
             if m.round == round_ and m.player1 == player1 and m.player2 == player2:
                 return m
         return None
 
-    def get_matchup_by_id(self, match_id: str) -> Matchup:
-        """Lookup matchup by ID."""
-        # find the row where the matchup is located (in_column=1 means column A)
-        match = self.matchups_sheet.find(match_id, in_column=1)
+    def get_fixture_by_id(self, match_id: str) -> Tuple[MatchFixture, str]:
+        """Lookup fixture by ID."""
+        # find the row where the fixture is located (in_column=1 means column A)
+        match = self.fixtures_sheet.find(match_id, in_column=1)
+        sheet_row = match.row
         if not match:
-            raise ValueError(f"Matchup with ID {match_id} not found")
+            raise ValueError(f"MatchFixture with ID {match_id} not found")
         # get the row data
-        values = self.matchups_sheet.row_values(match.row)
-        dict_ = dict(zip(self.matchups_sheet.row_values(1), values))
-        return Matchup(**dict_)
+        values = self.fixtures_sheet.row_values(match.row)
+        dict_ = dict(zip(self.fixtures_sheet.row_values(1), values))
+        fixture = MatchFixture(**dict_)
+        return fixture, sheet_row
 
-    def record_matchup_outcome(self, id_: str, outcome: MatchOutcome):
-        """Look up the matchup by ID and record the result.
+    def record_match_outcome(self, id_: str, outcome: MatchOutcome):
+        """Look up the fixture by ID and record the result.
 
-        Assert that the matchup has not been recorded before. (no winner)
+        Assert that the fixture has not been recorded before. (no winner)
 
-        Assert that player names according to sheet match the matchup.
+        Assert that player names according to sheet match the fixture.
         """
+        # get the fixture data and row number per sheets
+        fixture_data, nth_row = self.get_fixture_by_id(id_)
+        if fixture_data["winner"]:
+            raise ValueError(f"MatchFixture with ID {id_} already has a winner")
+        assert fixture_data["player1"] == str(
+            outcome.player1
+        ), f"Player1 mismatch: expected {fixture_data['player1']}, got {outcome.player1}"
+        assert fixture_data["player2"] == str(
+            outcome.player2
+        ), f"Player2 mismatch: expected {fixture_data['player2']}, got {outcome.player2}"
 
-        matchup = self.get_matchup_by_id(id_)
-        # find the target row
-        row = self.matchups_sheet.find(id_).row
-        # get the row data
-        values = self.matchups_sheet.row_values(row)
-        # create a dict from the row data
-        dict_ = dict(zip(self.matchups_sheet.row_values(1), values))
-        # create a Matchup object from the dict
-        matchup = Matchup(**dict_)
-        # check that the matchup has not been recorded before
-        if matchup.winner:
-            raise ValueError(f"Matchup with ID {id_} already has a winner")
-        if matchup.player1 != str(outcome.player1):
-            raise ValueError(f"Player names do not match the matchup")
-        if matchup.player2 != str(outcome.player2):
-            raise ValueError(f"Player names do not match the matchup")
-        # record the result
+        # form a MatchFixture object from the fixture data and outcome
+        outcome = MatchFixture(**fixture_data, **outcome.model_dump())
         for field in ["player1_score", "player2_score", "winner"]:
-            col = self.matchups_sheet.find(field, in_row=1).col
-            self.matchups_sheet.update_cell(
-                row,
+            col = self.fixtures_sheet.find(field, in_row=1).col
+            self.fixtures_sheet.update_cell(
+                nth_row,
                 col,
                 getattr(outcome, field),
             )
@@ -249,4 +249,4 @@ class SnookerSheet:
 
 if __name__ == "__main__":
     sheet = SnookerSheet("1yp-LgqPKfcsTzD5kXmc7-dOQR6-KVC2iYiy5Om9Zdm0")
-    sheet.get_matchup_by_id("btxuz")
+    sheet.get_fixture_by_id("btxuz")

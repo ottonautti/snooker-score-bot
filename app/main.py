@@ -113,11 +113,11 @@ async def handle_exception(req: Request, exc: Exception):
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
-@app.get("/matchups")
-async def get_matchups(settings=Depends(SETTINGS)):
-    """Returns the current matchups."""
+@app.get("/fixtures")
+async def get_fixtures(settings=Depends(SETTINGS)):
+    """Returns the current fixtures."""
     sheet = SnookerSheet(settings.SHEETID)
-    return sheet.get_matchups()
+    return sheet.get_fixtures()
 
 
 setup_logging()

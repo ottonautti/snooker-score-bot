@@ -26,6 +26,12 @@ class SnookerPlayer(BaseModel):
     def __str__(self):
         return self.name
 
+    def __llm_str__(self) -> str:
+        """Returns the group and name in the format "Group: Name".
+
+        This is used in LLM prompts."""
+        return f"{self.group}: {self.name}"
+
     @model_serializer
     def serialize_as_name(self):
         """Returns only the name when serializing the model"""
@@ -38,13 +44,6 @@ class SnookerPlayer(BaseModel):
         In the data, names are formatted as "Last First".
         """
         return self.name.split()[-1] if len(self.name.split()) > 1 else self.name
-
-    @property
-    def __llm_str__(self) -> str:
-        """Returns the group and name in the format "Group: Name".
-
-        This is used in LLM prompts."""
-        return f"{self.group}: {self.name}"
 
 
 class SnookerBreak(BaseModel):
@@ -81,11 +80,7 @@ class MatchOutcome(BaseModel):
     @computed_field
     def highest_break_player(self) -> Optional[SnookerPlayer]:
         """Returns the player with the highest break"""
-        return (
-            max(self.breaks, key=lambda b: b.points, default=None).player
-            if self.breaks
-            else None
-        )
+        return max(self.breaks, key=lambda b: b.points, default=None).player if self.breaks else None
 
     @model_validator(mode="after")
     def breaks_are_by_match_players(self):
@@ -99,7 +94,7 @@ class MatchOutcome(BaseModel):
 
 
 class SnookerMatch(MatchOutcome):
-    """Snooker match with additional validators for inferred data."""
+    """Snooker match with additional validators for LLM-inferred data."""
 
     # model configuration at runtime
     valid_players: ClassVar[list[SnookerPlayer]]
@@ -111,9 +106,7 @@ class SnookerMatch(MatchOutcome):
     def valid_score(cls, score):
         """Scores must be between 0 and max_score"""
         assert score >= 0, "score must be greater than or equal to 0"
-        assert (
-            score <= cls.max_score
-        ), f"score must be less than or equal to {cls.max_score}"
+        assert score <= cls.max_score, f"score must be less than or equal to {cls.max_score}"
         return score
 
     @field_validator("player1", "player2")
@@ -131,9 +124,7 @@ class SnookerMatch(MatchOutcome):
             ValueError: If the player name is not found in valid players.
         """
         if isinstance(player, str):
-            matched_player = next(
-                (p for p in cls.valid_players if p.name == player), None
-            )
+            matched_player = next((p for p in cls.valid_players if p.name == player), None)
             if matched_player is None:
                 raise ValueError(f"Player '{player}' not found in valid players.")
             return matched_player
@@ -148,20 +139,12 @@ class SnookerMatch(MatchOutcome):
         """
 
         # Check that both players are in the list of valid players
-        assert (
-            self.player1 in self.valid_players
-        ), f"Player '{self.player1}' is not a valid player"
-        assert (
-            self.player2 in self.valid_players
-        ), f"Player '{self.player2}' is not a valid player"
+        assert self.player1 in self.valid_players, f"Player '{self.player1}' is not a valid player"
+        assert self.player2 in self.valid_players, f"Player '{self.player2}' is not a valid player"
 
         # Check that the group of the match is the same as the group of the players
-        assert (
-            self.group == self.player1.group
-        ), f"Player '{self.player1}' is not in group {self.group}"
-        assert (
-            self.group == self.player2.group
-        ), f"Player '{self.player2}' is not in group {self.group}"
+        assert self.group == self.player1.group, f"Player '{self.player1}' is not in group {self.group}"
+        assert self.group == self.player2.group, f"Player '{self.player2}' is not in group {self.group}"
         assert self.player1.group == self.player2.group
 
         # Check that the two players are not the same
@@ -173,19 +156,9 @@ class SnookerMatch(MatchOutcome):
         """Returns a string representation of the match."""
 
         winner = self.winner
-        loser = (
-            self.player1 if self.player1_score < self.player2_score else self.player2
-        )
-        winner_score = (
-            self.player1_score
-            if self.player1_score > self.player2_score
-            else self.player2_score
-        )
-        loser_score = (
-            self.player1_score
-            if self.player1_score < self.player2_score
-            else self.player2_score
-        )
+        loser = self.player1 if self.player1_score < self.player2_score else self.player2
+        winner_score = self.player1_score if self.player1_score > self.player2_score else self.player2_score
+        loser_score = self.player1_score if self.player1_score < self.player2_score else self.player2_score
 
         TEMPLATES = {
             "eng": Template(
@@ -231,17 +204,12 @@ class SnookerMatch(MatchOutcome):
         return f"{summary}\n{link_line[lang]}"
 
     @classmethod
-    def configure_model(
-        cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = 2
-    ):
+    def configure_model(cls, valid_players: list[SnookerPlayer], max_score: Optional[int] = 2):
         cls.valid_players = valid_players
         cls.max_score = max_score
 
 
-# TODO: decouple model customization and model instantiation
-def get_match_model(
-    valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs
-) -> "SnookerMatch":
+def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs) -> "SnookerMatch":
     """Returns a version of the model with valid players set at runtime.
 
     Inputs are inferred from the passage and should follow:
@@ -261,9 +229,7 @@ def get_match_model(
 
     breaks = []
     for b in inputs.get("breaks", []):
-        player = next(
-            (player for player in valid_players if player.name == b.get("player")), None
-        )
+        player = next((player for player in valid_players if player.name == b.get("player")), None)
         breaks.append(SnookerBreak(player=player, points=b.get("points")))
 
     return SnookerMatch(

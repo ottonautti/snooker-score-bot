@@ -70,7 +70,7 @@ def test_e2e(monkeypatch):
     # Arrange
     today = datetime.today()
     # count number of matches before test
-    num_matches_before = len(TEST_SHEET.matchups_sheet.get_all_values())
+    num_matches_before = len(TEST_SHEET.fixtures_sheet.get_all_values())
 
     # Act
 
@@ -113,7 +113,7 @@ def test_e2e(monkeypatch):
         }
 
         # check that the match was recorded to the sheet
-        num_matches_after = len(TEST_SHEET.matchups_sheet.get_all_values())
+        num_matches_after = len(TEST_SHEET.fixtures_sheet.get_all_values())
         assert num_matches_after == num_matches_before + 1
 
 
