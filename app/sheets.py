@@ -13,7 +13,7 @@ import gspread.utils
 import pytz
 from pydantic.fields import Field
 
-from .models import MatchOutcome, SnookerPlayer
+from .models import SnookerMatch, SnookerPlayer
 
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 DATE_FORMAT = "%d.%m.%Y"
@@ -23,7 +23,7 @@ def get_helsinki_timestamp():
     return datetime.now(pytz.timezone("Europe/Helsinki")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-class MatchFixture(MatchOutcome):
+class MatchFixture(SnookerMatch):
     """Interface for match fixture data."""
 
     id_: str = Field(default_factory=lambda: MatchFixture.generate_id(), alias="id")
@@ -164,14 +164,25 @@ class SnookerSheet:
 
         return True
 
-    def get_fixtures(self, round_: int) -> List[MatchFixture]:
+    def get_matches(self, round_: int = None, incomplete_only: bool = False) -> List[SnookerMatch]:
         if not round_:
             round_ = self.current_round
-        fixtures_data = self.fixtures_sheet.get_all_records()
-        return [MatchFixture(**m) for m in fixtures_data if m["round"] == round_]
+        fixtures_data = self.fixtures_sheet.get_all_records(default_blank=None)
+        matches = []
+        for fixture in fixtures_data:
+            if fixture["round"] == round_:
+                match = SnookerMatch(
+                    player1=SnookerPlayer(name=fixture.pop("player1"), group=fixture.get("group")),
+                    player2=SnookerPlayer(name=fixture.pop("player2"), group=fixture.get("group")),
+                    **fixture,
+                )
+                if incomplete_only and match.winner:
+                    continue
+                matches.append(match)
+        return matches
 
     def add_fixtures(self, round_: int):
-        """Append _fixtures sheet with fixtures for the current round."""
+        """Append sheet with fixtures for the current round."""
         # get players groupwise
         players = self.current_players
 
@@ -185,11 +196,10 @@ class SnookerSheet:
             group_players = [p for p in players if p.group == group]
             for p1, p2 in combinations(group_players, 2):
                 fixture = MatchFixture(
-                    id=MatchFixture.generate_id(),
                     round=round_,
                     group=group,
-                    player1=p1.name,
-                    player2=p2.name,
+                    player1=SnookerPlayer(name=p1.name, group=group),
+                    player2=SnookerPlayer(name=p2.name, group=group),
                 )
                 fixtures.append(fixture)
 
@@ -197,28 +207,28 @@ class SnookerSheet:
         values = [fixture.dict(by_alias=True) for fixture in fixtures]
         self.fixtures_sheet.append_rows(values)
 
-    def get_fixture(self, round_: int, player1: str, player2: str) -> MatchFixture:
+    def get_match(self, round_: int, player1: str, player2: str) -> SnookerMatch:
         """Lookup fixture by round and players."""
-        fixtures = self.get_fixtures(round_)
+        fixtures = self.get_matches(round_)
         for m in fixtures:
             if m.round == round_ and m.player1 == player1 and m.player2 == player2:
                 return m
         return None
 
-    def get_fixture_by_id(self, match_id: str) -> Tuple[MatchFixture, str]:
-        """Lookup fixture by ID."""
+    def get_match_by_id(self, match_id: str) -> Tuple[SnookerMatch, int]:
+        """Lookup match by ID."""
         # find the row where the fixture is located (in_column=1 means column A)
         match = self.fixtures_sheet.find(match_id, in_column=1)
         sheet_row = match.row
         if not match:
-            raise ValueError(f"MatchFixture with ID {match_id} not found")
+            raise ValueError(f"Match with ID {match_id} not found")
         # get the row data
         values = self.fixtures_sheet.row_values(match.row)
         dict_ = dict(zip(self.fixtures_sheet.row_values(1), values))
-        fixture = MatchFixture(**dict_)
-        return fixture, sheet_row
+        match = SnookerMatch(**dict_)
+        return match, sheet_row
 
-    def record_match_outcome(self, id_: str, outcome: MatchOutcome):
+    def record_match_outcome(self, id_: str, outcome: SnookerMatch):
         """Look up the fixture by ID and record the result.
 
         Assert that the fixture has not been recorded before. (no winner)
@@ -226,9 +236,9 @@ class SnookerSheet:
         Assert that player names according to sheet match the fixture.
         """
         # get the fixture data and row number per sheets
-        fixture_data, nth_row = self.get_fixture_by_id(id_)
+        fixture_data, nth_row = self.get_match_by_id(id_)
         if fixture_data["winner"]:
-            raise ValueError(f"MatchFixture with ID {id_} already has a winner")
+            raise ValueError(f"Match with ID {id_} already has a winner")
         assert fixture_data["player1"] == str(
             outcome.player1
         ), f"Player1 mismatch: expected {fixture_data['player1']}, got {outcome.player1}"
@@ -236,8 +246,7 @@ class SnookerSheet:
             outcome.player2
         ), f"Player2 mismatch: expected {fixture_data['player2']}, got {outcome.player2}"
 
-        # form a MatchFixture object from the fixture data and outcome
-        outcome = MatchFixture(**fixture_data, **outcome.model_dump())
+        outcome = SnookerMatch(**outcome.model_dump())
         for field in ["player1_score", "player2_score", "winner"]:
             col = self.fixtures_sheet.find(field, in_row=1).col
             self.fixtures_sheet.update_cell(
@@ -249,4 +258,4 @@ class SnookerSheet:
 
 if __name__ == "__main__":
     sheet = SnookerSheet("1yp-LgqPKfcsTzD5kXmc7-dOQR6-KVC2iYiy5Om9Zdm0")
-    sheet.get_fixture_by_id("btxuz")
+    sheet.get_match_by_id("btxuz")

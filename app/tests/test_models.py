@@ -3,7 +3,7 @@ from functools import partial
 import pytest
 from pydantic import ValidationError
 
-from app.models import SnookerBreak, SnookerMatch, SnookerPlayer, get_match_model
+from app.models import InferredMatch, SnookerBreak, SnookerPlayer, get_match_model
 
 player1 = SnookerPlayer(name="Player Yksi", group="L1")
 player2 = SnookerPlayer(name="Player Kaksi", group="L1")
