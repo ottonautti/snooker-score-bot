@@ -117,7 +117,25 @@ async def handle_exception(req: Request, exc: Exception):
 async def get_fixtures(settings=Depends(SETTINGS)):
     """Returns the current fixtures."""
     sheet = SnookerSheet(settings.SHEETID)
-    return sheet.get_fixtures()
+    current_round = sheet.current_round
+    fixtures = sheet.get_matches(incomplete_only=True, round_=current_round)
+    filtered = [
+        f.model_dump(
+            include=[
+                "player1",
+                "player2",
+                "player1_score",
+                "player2_score",
+                "date",
+                "group",
+                "round",
+                "winner",
+                "breaks",
+            ]
+        )
+        for f in fixtures
+    ]
+    return JSONResponse(content={"round": current_round, "fixtures": filtered})
 
 
 setup_logging()

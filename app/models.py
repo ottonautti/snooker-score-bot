@@ -2,13 +2,7 @@ import datetime
 from typing import ClassVar, Literal, Optional, Union
 
 from jinja2 import Template
-from pydantic import (
-    BaseModel,
-    computed_field,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import BaseModel, computed_field, field_validator, model_serializer, model_validator
 from pydantic.fields import Field
 
 from .settings import get_settings
@@ -33,9 +27,9 @@ class SnookerPlayer(BaseModel):
         return f"{self.group}: {self.name}"
 
     @model_serializer
-    def serialize_as_name(self):
+    def serialize_as_name(self) -> str:
         """Returns only the name when serializing the model"""
-        return self.name
+        return str(self.name)
 
     @property
     def first_name(self) -> str:
@@ -53,7 +47,7 @@ class SnookerBreak(BaseModel):
     points: int = Field(gt=0, le=147)
 
 
-class MatchOutcome(BaseModel):
+class SnookerMatch(BaseModel):
     """Base match class with common attributes"""
 
     date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
@@ -63,6 +57,18 @@ class MatchOutcome(BaseModel):
     player1_score: Optional[int] = Field(default=None)
     player2_score: Optional[int] = Field(default=None)
     breaks: list[SnookerBreak] = Field(default_factory=list)
+
+    class Config:
+        json_encoders = {
+            datetime.date: lambda v: v.strftime("%Y-%m-%d"),
+        }
+
+    @field_validator("date", mode="before")
+    def parse_date(cls, value):
+        """Parses the date string to a datetime object if it is a string."""
+        if isinstance(value, str):
+            value = datetime.datetime.strptime(value, "%d.%m.%Y").date()
+        return value
 
     @computed_field
     def winner(self) -> str:
@@ -93,7 +99,7 @@ class MatchOutcome(BaseModel):
         return self
 
 
-class SnookerMatch(MatchOutcome):
+class InferredMatch(SnookerMatch):
     """Snooker match with additional validators for LLM-inferred data."""
 
     # model configuration at runtime
@@ -209,7 +215,7 @@ class SnookerMatch(MatchOutcome):
         cls.max_score = max_score
 
 
-def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs) -> "SnookerMatch":
+def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs) -> "InferredMatch":
     """Returns a version of the model with valid players set at runtime.
 
     Inputs are inferred from the passage and should follow:
@@ -225,14 +231,14 @@ def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int]
     """
 
     # configure the match model given valid players and max score
-    SnookerMatch.configure_model(valid_players, max_score)
+    InferredMatch.configure_model(valid_players, max_score)
 
     breaks = []
     for b in inputs.get("breaks", []):
         player = next((player for player in valid_players if player.name == b.get("player")), None)
         breaks.append(SnookerBreak(player=player, points=b.get("points")))
 
-    return SnookerMatch(
+    return InferredMatch(
         group=inputs.get("group"),
         player1=inputs.get("player1"),
         player2=inputs.get("player2"),
