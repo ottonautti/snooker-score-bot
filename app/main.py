@@ -90,15 +90,6 @@ async def post_scores(
     """Handles inbound scores"""
     return await handle_scores(settings=SETTINGS, msg=msg)
 
-
-@app.post("/scores/sms/sixred24")
-async def post_scores_sixred24(
-    msg=Depends(parse_twilio_msg),
-):
-    """Handles inbound scores for SixRed24 league."""
-    return await handle_scores(settings=get_settings(sixred24=True), msg=msg)
-
-
 @app.get("/sheet")
 async def redirect_to_sheet(settings=Depends(SETTINGS)):
     """Redirects to the Google Sheet, tab corresponding to current round."""
@@ -107,14 +98,6 @@ async def redirect_to_sheet(settings=Depends(SETTINGS)):
     if not url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No current round")
     return RedirectResponse(url=url)
-
-
-@app.get("/sheet/sixred24")
-async def redirect_to_sheet_sixred24():
-    """Redirects to the Google Sheet of the SixRed24 league."""
-    settings = get_settings(sixred24=True)
-    sheet = SnookerSheet(settings.SHEETID)
-    return RedirectResponse(url=sheet.url)
 
 
 async def fetch_matches(settings, incomplete_only: bool = False, round_: Optional[str] = None) -> list[SnookerMatch]:
