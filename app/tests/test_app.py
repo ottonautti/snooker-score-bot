@@ -76,7 +76,7 @@ def test_e2e(monkeypatch):
 
     # make the LLM return the mock match
     with patch.object(
-        TEST_SHEET, "get_current_players", return_value=MockFewShotData.players
+        TEST_SHEET, "current_players", return_value=MockFewShotData.players
     ):
         response = client.post(
             "/scores/sms",
