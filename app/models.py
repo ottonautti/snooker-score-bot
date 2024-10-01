@@ -16,7 +16,7 @@ from pydantic.fields import Field
 
 from .settings import get_settings
 
-settings = get_settings(sixred24=False)  # TODO: DRY
+SETTINGS = get_settings()
 
 
 class SnookerPlayer(BaseModel):
@@ -233,7 +233,7 @@ class InferredMatch(SnookerMatch):
             loser_score=loser_score,
         )
 
-        sheet_url = settings.SHEET_SHORTLINK
+        sheet_url = SETTINGS.SHEET_SHORTLINK
         link_line = {
             "eng": f"League standings: {sheet_url}",
             "fin": f"Sarjataulukko: {sheet_url}",
