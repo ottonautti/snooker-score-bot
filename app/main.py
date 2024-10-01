@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import sys
+from typing import Optional
 
 import google.cloud.logging
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -11,11 +12,11 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
-from app.llm.inference import SnookerScoresLLM
-from app.models import get_match_model
-from app.settings import get_settings, messages
-from app.sheets import SnookerSheet
-from app.twilio_client import Twilio, TwilioInboundMessage
+from .llm.inference import SnookerScoresLLM
+from .models import SnookerMatch, get_match_model
+from .settings import get_settings, messages
+from .sheets import SnookerSheet
+from .twilio_client import Twilio, TwilioInboundMessage
 
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
 SETTINGS = get_settings()
@@ -54,7 +55,7 @@ async def handle_scores(msg: TwilioInboundMessage, settings):
     llm = SnookerScoresLLM(llm=settings.LLM)
     """Handles inbound scores"""
     logging.info("Received message from %s: %s", msg.sender, msg.body)
-    valid_players = sheet.get_current_players()
+    valid_players = sheet.current_players
     try:
         output: dict = llm.infer(passage=msg.body, valid_players_txt=sheet.players_txt)
         snooker_match = get_match_model(valid_players=valid_players, max_score=settings.MAX_SCORE, **output)
@@ -105,29 +106,54 @@ async def handle_exception(req: Request, exc: Exception):
         return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
+async def fetch_matches(settings, incomplete_only: bool = False, round_: Optional[str] = None) -> list[SnookerMatch]:
+    """Fetch matches based on the provided parameters."""
+    sheet = SnookerSheet(settings.SHEETID)
+    matches: list[SnookerMatch] = sheet.get_matches(incomplete_only=incomplete_only, round_=round_)
+    return matches
+
+
+async def fetch_match_by_id(settings, match_id: str) -> SnookerMatch:
+    """Fetch a single match by its ID."""
+    sheet = SnookerSheet(settings.SHEETID)
+    match = sheet.get_match_by_id(match_id)
+    if not match:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
+    return match
+
+
 @app.get("/fixtures")
 async def get_fixtures(settings=Depends(SETTINGS)):
-    """Returns the current fixtures."""
+    """Returns scheduled matches for the current round."""
     sheet = SnookerSheet(settings.SHEETID)
     current_round = sheet.current_round
-    fixtures = sheet.get_matches(incomplete_only=True, round_=current_round)
-    filtered = [
-        f.model_dump(
-            include=[
-                "player1",
-                "player2",
-                "player1_score",
-                "player2_score",
-                "date",
-                "group",
-                "round",
-                "winner",
-                "breaks",
-            ]
-        )
-        for f in fixtures
-    ]
-    return JSONResponse(content={"round": current_round, "fixtures": filtered})
+    fixtures = await fetch_matches(settings, incomplete_only=True, round_=current_round)
+    fixtures_out = [fixture.model_dump(by_alias=True) for fixture in fixtures]
+    return JSONResponse(content={"round": current_round, "fixtures": fixtures_out})
+
+
+@app.get("/matches")
+async def get_matches(settings=Depends(SETTINGS)):
+    """Returns all matches."""
+    matches = await fetch_matches(settings)
+    matches_out = [match.model_dump(by_alias=True) for match in matches]
+    return JSONResponse(content={"matches": matches_out})
+
+
+@app.get("/fixtures/{id}")
+async def get_fixture_by_id(id: str, settings=Depends(SETTINGS)):
+    """Returns a specific fixture by ID."""
+    match = await fetch_match_by_id(settings, id)
+    if match.state == "scheduled":
+        return JSONResponse(content=match.model_dump(by_alias=True))
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Fixture not found")
+
+
+@app.get("/matches/{id}")
+async def get_match_by_id(id: str, settings=Depends(SETTINGS)):
+    """Returns a specific match by ID."""
+    match = await fetch_match_by_id(settings, id)
+    return JSONResponse(content=match.model_dump(by_alias=True))
 
 
 setup_logging()

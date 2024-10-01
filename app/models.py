@@ -1,8 +1,17 @@
 import datetime
-from typing import ClassVar, Literal, Optional, Union
+import random
+import string
+from typing import Any, ClassVar, Literal, Optional, Union
 
 from jinja2 import Template
-from pydantic import BaseModel, computed_field, field_validator, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    computed_field,
+    field_serializer,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 from pydantic.fields import Field
 
 from .settings import get_settings
@@ -47,27 +56,53 @@ class SnookerBreak(BaseModel):
     points: int = Field(gt=0, le=147)
 
 
-class SnookerMatch(BaseModel):
-    """Base match class with common attributes"""
+def generate_match_id(length: int = 5) -> str:
+    """Generate a random ID for the fixture."""
+    return "".join(random.choices("abcdefghjkmnpqrstuvwxyz" + string.digits, k=length))
 
-    date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
+
+class MatchFixture(BaseModel):
+    """Match fixture i.e. a scheduled match"""
+
+    id_: str = Field(default_factory=lambda: generate_match_id, alias="id")
     group: str
     player1: Union[SnookerPlayer, str]
     player2: Union[SnookerPlayer, str]
+
+    @computed_field
+    def state(self) -> str:
+        """Returns the state of the match/fixture.
+
+        If it's a SnookerMatch with scores, the state is "completed", otherwise "scheduled".
+        """
+        if isinstance(self, SnookerMatch):
+            return self._get_state()
+        return "scheduled"
+
+
+class SnookerMatch(MatchFixture):
+    """Complete snooker match with scores and breaks"""
+
+    date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
     player1_score: Optional[int] = Field(default=None)
     player2_score: Optional[int] = Field(default=None)
     breaks: list[SnookerBreak] = Field(default_factory=list)
 
-    class Config:
-        json_encoders = {
-            datetime.date: lambda v: v.strftime("%Y-%m-%d"),
-        }
+    @model_validator(mode="after")
+    def breaks_are_by_match_players(self):
+        """Breaks have to be by one of the match players"""
+        for b in self.breaks:
+            assert b.player in [
+                self.player1,
+                self.player2,
+            ], f"{b.player} is not a player in this match"
+        return self
 
-    @field_validator("date", mode="before")
-    def parse_date(cls, value):
-        """Parses the date string to a datetime object if it is a string."""
-        if isinstance(value, str):
-            value = datetime.datetime.strptime(value, "%d.%m.%Y").date()
+    @field_serializer("date")
+    def _format_date(value) -> str:
+        """Formats the date for API response."""
+        if isinstance(value, datetime.date):
+            return value.strftime("%Y-%m-%d")
         return value
 
     @computed_field
@@ -88,15 +123,11 @@ class SnookerMatch(BaseModel):
         """Returns the player with the highest break"""
         return max(self.breaks, key=lambda b: b.points, default=None).player if self.breaks else None
 
-    @model_validator(mode="after")
-    def breaks_are_by_match_players(self):
-        """Breaks have to be by one of the match players"""
-        for b in self.breaks:
-            assert b.player in [
-                self.player1,
-                self.player2,
-            ], f"{b.player} is not a player in this match"
-        return self
+    def _get_state(self) -> str:
+        """Determine the state of the snooker match."""
+        if self.player1_score is not None and self.player2_score is not None:
+            return "completed"
+        return "scheduled"
 
 
 class InferredMatch(SnookerMatch):

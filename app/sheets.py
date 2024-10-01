@@ -1,8 +1,6 @@
 """Google sheets API client for managing snooker scores."""
 
 import os
-import random
-import string
 from datetime import datetime
 from itertools import combinations
 from typing import List, Tuple
@@ -11,34 +9,22 @@ import google.auth
 import gspread
 import gspread.utils
 import pytz
-from pydantic.fields import Field
 
-from .models import SnookerMatch, SnookerPlayer
+from .models import SnookerMatch, SnookerPlayer, MatchFixture
 
 CURDIR = os.path.dirname(os.path.abspath(__file__))
-DATE_FORMAT = "%d.%m.%Y"
+SHEETS_DATE_FORMAT = "%d.%m.%Y"
 
 
 def get_helsinki_timestamp():
     return datetime.now(pytz.timezone("Europe/Helsinki")).strftime("%Y-%m-%d %H:%M:%S")
 
-
-class MatchFixture(SnookerMatch):
-    """Interface for match fixture data."""
-
-    id_: str = Field(default_factory=lambda: MatchFixture.generate_id(), alias="id")
-
-    @property
-    def winner(self) -> str:
-        if self.player1_score == self.player2_score:
-            return None
-        return self.player1 if self.player1_score > self.player2_score else self.player2
-
-    @staticmethod
-    def generate_id(length: int = 5) -> str:
-        """Generate a random ID for the fixture."""
-        return "".join(random.choices("abcdefghjkmnpqrstuvwxyz" + string.digits, k=length))
-
+def try_parse_date(date_str: str):
+    """Tries to parse date from the assumed format. Returns original string if parsing fails."""
+    try:
+        return datetime.strptime(date_str, SHEETS_DATE_FORMAT).date()
+    except ValueError:
+        return date_str
 
 class SnookerSheet:
 
@@ -72,8 +58,8 @@ class SnookerSheet:
         rounds = self.ss.values_get("nr_rounds").get("values")
         today = datetime.now().date()
         for r in rounds:
-            start_date = datetime.strptime(r[1], DATE_FORMAT).date()
-            end_date = datetime.strptime(r[2], DATE_FORMAT).date()
+            start_date = datetime.strptime(r[1], SHEETS_DATE_FORMAT).date()
+            end_date = datetime.strptime(r[2], SHEETS_DATE_FORMAT).date()
             if start_date <= today <= end_date:
                 return int(r[0])
         return None
@@ -172,6 +158,7 @@ class SnookerSheet:
         for fixture in fixtures_data:
             if fixture["round"] == round_:
                 match = SnookerMatch(
+                    date=try_parse_date(fixture.pop("date")),
                     player1=SnookerPlayer(name=fixture.pop("player1"), group=fixture.get("group")),
                     player2=SnookerPlayer(name=fixture.pop("player2"), group=fixture.get("group")),
                     **fixture,
@@ -188,7 +175,6 @@ class SnookerSheet:
 
         # get unique groups
         groups = sorted(set([p.group for p in players]))
-        column_order = ["id", "round", "group", "player1", "player2"]
 
         # get fixtures for each group
         fixtures = []
@@ -215,28 +201,37 @@ class SnookerSheet:
                 return m
         return None
 
-    def get_match_by_id(self, match_id: str) -> Tuple[SnookerMatch, int]:
-        """Lookup match by ID."""
+    def _get_match_data_by_id(self, match_id: str) -> Tuple[dict, int]:
+        """Lookup match by ID. Return row data and row number."""
         # find the row where the fixture is located (in_column=1 means column A)
         match = self.fixtures_sheet.find(match_id, in_column=1)
-        sheet_row = match.row
+        nth_row = match.row
         if not match:
             raise ValueError(f"Match with ID {match_id} not found")
         # get the row data
         values = self.fixtures_sheet.row_values(match.row)
-        dict_ = dict(zip(self.fixtures_sheet.row_values(1), values))
-        match = SnookerMatch(**dict_)
-        return match, sheet_row
+        data = dict(zip(self.fixtures_sheet.row_values(1), values))
+        return data, nth_row
+
+    def get_match_by_id(self, match_id: str) -> SnookerMatch:
+        match, _ = self._get_match_data_by_id(match_id)
+        return SnookerMatch(
+            date=try_parse_date(match.pop("date")),
+            player1=SnookerPlayer(name=match.pop("player1"), group=match.get("group")),
+            player2=SnookerPlayer(name=match.pop("player2"), group=match.get("group")),
+            **match,
+        )
+
 
     def record_match_outcome(self, id_: str, outcome: SnookerMatch):
-        """Look up the fixture by ID and record the result.
+        """Look up the fixture by ID and record outcome
 
         Assert that the fixture has not been recorded before. (no winner)
 
         Assert that player names according to sheet match the fixture.
         """
         # get the fixture data and row number per sheets
-        fixture_data, nth_row = self.get_match_by_id(id_)
+        fixture_data, nth_row = self._get_match_data_by_id(id_)
         if fixture_data["winner"]:
             raise ValueError(f"Match with ID {id_} already has a winner")
         assert fixture_data["player1"] == str(
@@ -254,6 +249,8 @@ class SnookerSheet:
                 col,
                 getattr(outcome, field),
             )
+
+        return True
 
 
 if __name__ == "__main__":
