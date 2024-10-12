@@ -1,5 +1,6 @@
 """FastAPI app for recording snooker match outcomes reported by users."""
 
+import argparse
 import json
 import logging
 import os
@@ -11,6 +12,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
+from tabulate import tabulate
 
 from .llm.inference import SnookerScoresLLM
 from .models import SnookerMatch, get_match_model
@@ -157,3 +159,37 @@ async def get_match_by_id(id: str, settings=Depends(SETTINGS)):
 
 
 setup_logging()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Snooker Score Bot")
+    parser.add_argument("--add-fixtures", action="store_true", help="Add fixtures for the current round")
+    parser.add_argument("--sheet-id", "-s", type=str, help="Override the default sheet ID")
+    args = parser.parse_args()
+
+    # Prompt for sheet-id if not provided
+    if not args.sheet_id:
+        args.sheet_id = input("Please enter the sheet ID: ")
+
+    sheet_id = args.sheet_id
+    sheet = SnookerSheet(sheet_id)
+    current_round = sheet.current_round
+    players = sheet.current_players
+
+    # Display current players and round
+    player_table = [[player.name, player.group] for player in players]
+    print(f"Current Round: {current_round}")
+    print(tabulate(player_table, headers=["PLAYER", "GROUP"], tablefmt="grid"))
+
+    if args.add_fixtures:
+        confirmation = input(f"Are you sure you want to add fixtures to sheet {sheet_id}? (yes/no): ")
+        if confirmation.lower() == "yes":
+            sheet.add_fixtures(current_round)
+            logging.info("Fixtures added for round %s", current_round)
+        else:
+            logging.info("Operation cancelled by user.")
+
+
+if __name__ == "__main__":
+    main()
+    sys.exit(0)
