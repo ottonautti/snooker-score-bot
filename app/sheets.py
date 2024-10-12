@@ -19,6 +19,7 @@ SHEETS_DATE_FORMAT = "%d.%m.%Y"
 def get_helsinki_timestamp():
     return datetime.now(pytz.timezone("Europe/Helsinki")).strftime("%Y-%m-%d %H:%M:%S")
 
+
 def try_parse_date(date_str: str):
     """Tries to parse date from the assumed format. Returns original string if parsing fails."""
     try:
@@ -26,7 +27,12 @@ def try_parse_date(date_str: str):
     except ValueError:
         return date_str
 
+
 class SnookerSheet:
+
+    fixture_headers = [
+        "id", "round", "group", "player1", "player2", "date", "player1_score", "player2_score", "winner", "log"  # fmt: skip
+    ]
 
     def __init__(self, spreadsheet_id: str):
         credentials, project_id = google.auth.default(
@@ -46,6 +52,10 @@ class SnookerSheet:
 
     @property
     def fixtures_sheet(self) -> gspread.Worksheet:
+        """Create if it doesn't exist and add headers."""
+        if "_fixtures" not in [ws.title for ws in self.ss.worksheets()]:
+            ws = self.ss.add_worksheet("_fixtures", rows=1, cols=10)
+            ws.append_row(self.fixture_headers)
         return self.ss.worksheet("_fixtures")
 
     @property
@@ -190,7 +200,7 @@ class SnookerSheet:
                 fixtures.append(fixture)
 
         # append fixtures to sheet
-        values = [fixture.dict(by_alias=True) for fixture in fixtures]
+        values = [fixture.dict(include=self.fixture_headers, by_alias=True) for fixture in fixtures]
         self.fixtures_sheet.append_rows(values)
 
     def get_match(self, round_: int, player1: str, player2: str) -> SnookerMatch:
@@ -222,7 +232,6 @@ class SnookerSheet:
             **match,
         )
 
-
     def record_match_outcome(self, id_: str, outcome: SnookerMatch):
         """Look up the fixture by ID and record outcome
 
@@ -251,8 +260,3 @@ class SnookerSheet:
             )
 
         return True
-
-
-if __name__ == "__main__":
-    sheet = SnookerSheet("1yp-LgqPKfcsTzD5kXmc7-dOQR6-KVC2iYiy5Om9Zdm0")
-    sheet.get_match_by_id("btxuz")

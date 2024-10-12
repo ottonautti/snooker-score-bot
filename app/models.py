@@ -58,13 +58,15 @@ class SnookerBreak(BaseModel):
 
 def generate_match_id(length: int = 5) -> str:
     """Generate a random ID for the fixture."""
+    #                             exclude ambiguous characters
     return "".join(random.choices("abcdefghjkmnpqrstuvwxyz" + string.digits, k=length))
 
 
 class MatchFixture(BaseModel):
     """Match fixture i.e. a scheduled match"""
 
-    id_: str = Field(default_factory=lambda: generate_match_id, alias="id")
+    id_: str = Field(default_factory=generate_match_id, alias="id")
+    round_: int = Field(alias="round")
     group: str
     player1: Union[SnookerPlayer, str]
     player2: Union[SnookerPlayer, str]
