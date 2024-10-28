@@ -24,15 +24,13 @@ messages = get_messages("fin")
 class Settings:
     MAX_SCORE = 2  # Matches are best of 3
     LLM = "vertexai"
-    SHEET_SHORTLINK = "https://bit.ly/g147"  # shortened URL to the Google Sheet
-    INFO_SHORTLINK = "https://bit.ly/g147info"  # shortened URL to the INFO-tab of the Google Sheet
+    SHEET_SHORTLINK = "https://tinyurl.com/groovesnk"  # shortened URL to the Google Sheet
 
 
 class SixRed24Settings(Settings):
     MAX_SCORE = 3  # Matches are best of 5
     SHEETID = "1NUEP1Mrl7-FPbr98rVNjULVdzQutCVi5PwlQEl6dez4"
     SHEET_SHORTLINK = "https://bit.ly/g147-6R24"  # shortened URL to the Google Sheet
-    INFO_SHORTLINK = "https://bit.ly/g147pub-6R24"  # shortened URL to the INFO-tab of the Google Sheet
 
 
 class HouseLeagueSettings(Settings):
