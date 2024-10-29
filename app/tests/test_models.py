@@ -57,6 +57,7 @@ def test_invalid_match_score_raises():
         )
         match.valid_score(match.player1_score)
 
+
 def test_players_not_from_correct_group_raises():
     with pytest.raises(ValidationError):
         match = match_model_for_testing(
@@ -68,6 +69,7 @@ def test_players_not_from_correct_group_raises():
             breaks=[{"player": "Player Yksi", "points": 50}, {"player": "Player Kaksi", "points": 60}],
         )
         match.check_players()
+
 
 def test_breaks_are_by_match_players_raises():
     with pytest.raises(ValidationError):
@@ -99,11 +101,11 @@ def test_match_summary():
         ],
     )
 
-    assert (
-        match.summary("fin").startswith("Player Yksi voitti vastustajan Player Kaksi 2-1.\nBreikit: Yksi 50, Yksi 70, Kaksi 60.")
+    assert match.summary("fin").startswith(
+        "Player Yksi voitti vastustajan Player Kaksi 2-1.\nBreikit: Yksi 50, Yksi 70, Kaksi 60."
     )
-    assert (
-        match.summary("eng").startswith("Player Yksi won Player Kaksi by 2 frames to 1.\nBreaks: Yksi 50, Yksi 70, Kaksi 60.")
+    assert match.summary("eng").startswith(
+        "Player Yksi won Player Kaksi by 2 frames to 1.\nBreaks: Yksi 50, Yksi 70, Kaksi 60."
     )
 
 
