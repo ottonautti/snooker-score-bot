@@ -66,7 +66,7 @@ class MatchFixture(BaseModel):
     """Match fixture i.e. a scheduled match"""
 
     id_: str = Field(default_factory=generate_match_id, alias="id")
-    round_: int = Field(alias="round")
+    round: Optional[int] = Field(alias="round", default=None)
     group: str
     player1: Union[SnookerPlayer, str]
     player2: Union[SnookerPlayer, str]
@@ -82,13 +82,17 @@ class MatchFixture(BaseModel):
         return "scheduled"
 
 
-class SnookerMatch(MatchFixture):
-    """Complete snooker match with scores and breaks"""
+class MatchOutcome(BaseModel):
+    """Match outcome i.e. a completed match"""
 
     date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
-    player1_score: Optional[int] = Field(default=None)
-    player2_score: Optional[int] = Field(default=None)
+    player1_score: Optional[int] = None
+    player2_score: Optional[int] = None
     breaks: list[SnookerBreak] = Field(default_factory=list)
+
+
+class SnookerMatch(MatchFixture, MatchOutcome):
+    """Complete snooker match with scores and breaks"""
 
     @model_validator(mode="after")
     def breaks_are_by_match_players(self):
