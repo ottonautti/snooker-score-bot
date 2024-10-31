@@ -63,7 +63,7 @@ def generate_match_id(length: int = 5) -> str:
 
 
 class MatchFixture(BaseModel):
-    """Match fixture i.e. a scheduled match"""
+    """Match fixture i.e. an unplayed match"""
 
     id_: str = Field(default_factory=generate_match_id, alias="id")
     round: Optional[int] = Field(alias="round", default=None)
@@ -75,11 +75,11 @@ class MatchFixture(BaseModel):
     def state(self) -> str:
         """Returns the state of the match/fixture.
 
-        If it's a SnookerMatch with scores, the state is "completed", otherwise "scheduled".
+        If it's a SnookerMatch with scores, the state is "completed", otherwise "unplayed".
         """
         if isinstance(self, SnookerMatch):
             return self._get_state()
-        return "scheduled"
+        return "unplayed"
 
 
 class MatchOutcome(BaseModel):
@@ -133,7 +133,7 @@ class SnookerMatch(MatchFixture, MatchOutcome):
         """Determine the state of the snooker match."""
         if self.player1_score is not None and self.player2_score is not None:
             return "completed"
-        return "scheduled"
+        return "unplayed"
 
 
 class InferredMatch(SnookerMatch):
@@ -284,3 +284,18 @@ def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int]
         breaks=breaks,
         passage_language=inputs.get("language"),
     )
+
+
+class SnookerMatchList(BaseModel):
+    round: int
+    matches: list[SnookerMatch] = Field(default_factory=list)
+
+    @computed_field(alias="matches")
+    def completed(self) -> list[SnookerMatch]:
+        """Filter for completed matches."""
+        return [m for m in self.matches if m.state == "completed"]
+
+    @computed_field(alias="matches")
+    def unplayed(self) -> list[SnookerMatch]:
+        """Filter for unplayed matches."""
+        return [m for m in self.matches if m.state == "unplayed"]

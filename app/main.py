@@ -13,11 +13,16 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from .llm.inference import SnookerScoresLLM
-from .models import SnookerMatch, get_match_model, MatchOutcome, MatchFixture
-from .settings import get_settings, get_messages
+from .models import (
+    MatchFixture,
+    MatchOutcome,
+    SnookerMatch,
+    SnookerMatchList,
+    get_match_model,
+)
+from .settings import get_messages, get_settings
 from .sheets import SnookerSheet
 from .twilio_client import Twilio, TwilioInboundMessage
-
 
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
 SETTINGS = get_settings()
@@ -155,19 +160,33 @@ async def get_fixtures(settings=Depends(SETTINGS)) -> list[MatchFixture]:
     return JSONResponse(content={"round": current_round, "fixtures": fixtures_out})
 
 
-@app.get("/matches")
-async def get_matches(unplayed: bool = False, round: int = None, settings=Depends(SETTINGS)):
+@app.get("/matches", response_model=SnookerMatchList, response_model_exclude_unset=True)
+async def get_matches(unplayed: bool = False, completed: bool = False, round: int = None, settings=Depends(SETTINGS)):
     """Returns all matches or only unplayed matches if 'unplayed' is True."""
     current_round = None
     if unplayed or round is None:
         sheet = SnookerSheet(settings.SHEETID)
         current_round = sheet.current_round
     matches = await fetch_matches(settings, unplayed_only=unplayed, round=round or current_round)
-    matches_out = [match.model_dump(by_alias=True) for match in matches]
-    return JSONResponse(content={"matches": matches_out})
+    matches_dump = [
+        m.model_dump(
+            exclude_none=True,
+            exclude_unset=True,
+            exclude="breaks",  # TODO: fetch breaks to the response
+        )
+        for m in matches
+    ]
+    matches_list = SnookerMatchList(matches=matches_dump, round=current_round)
+    if unplayed:
+        content = matches_list.model_dump(by_alias=True, include={"round", "unplayed"})
+    elif completed:
+        content = matches_list.model_dump(by_alias=True, include={"round", "completed"})
+    else:
+        content = matches_list.model_dump(by_alias=True, include={"round", "matches"})
+    return JSONResponse(content=content)
 
 
-@app.get("/matches/{id}")
+@app.get("/matches/{id}", response_model=SnookerMatch)
 async def get_match_by_id(id: str, settings=Depends(SETTINGS)):
     """Returns a specific match by ID."""
     match = await fetch_match_by_id(settings, id)
