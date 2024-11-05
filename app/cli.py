@@ -24,7 +24,7 @@ def cli(ctx, sheet_id):
 
 @cli.command()
 @click.pass_context
-def players(ctx):
+def cli_print_players(ctx):
     """List current players"""
     sheet_id = ctx.obj["sheet_id"]
     sheet = SnookerSheet(sheet_id)
@@ -36,7 +36,7 @@ def players(ctx):
 
 @cli.command()
 @click.pass_context
-def make_fixtures(ctx):
+def cli_make_fixtures(ctx):
     """Make match fixtures for the current round"""
     sheet_id = ctx.obj["sheet_id"]
     sheet = SnookerSheet(sheet_id)
@@ -44,8 +44,13 @@ def make_fixtures(ctx):
 
     print_players(sheet.current_players)
 
-    confirmation = input(f"Are you sure you want to create match fixtures to sheet {sheet_id}? (yes/no): ")
-    if confirmation.lower() == "yes":
+    # fmt: off
+    confirmation = input(f"\nAre you sure you want to create match fixtures?\n"
+                         f"SHEET ID: {sheet_id}\n"
+                         f"ROUND: {current_round}\n"
+                         f"(y/N): ")
+    # fmt: on
+    if confirmation.lower().startswith("y"):
         sheet.make_fixtures(current_round)
         logging.info("Fixtures added for round %s", current_round)
     else:

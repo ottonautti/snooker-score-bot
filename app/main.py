@@ -74,7 +74,11 @@ def process_match_outcome(payload: dict, match_id: Optional[str] = None) -> Snoo
 
 async def handle_scores_passage(passage: TwilioInboundMessage, settings):
     """Handles inbound scores"""
-    output: dict = LLM.infer(passage=passage.body, valid_players_txt=SHEET.players_txt)
+    unplayed_matches = SHEET.get_matches(unplayed_only=True)
+    fixtures_dump = json.dumps(
+        [f.model_dump(include=["id_", "group", "player1", "player2"]) for f in unplayed_matches], ensure_ascii=False
+    )
+    output: dict = LLM.infer(passage=passage.body, fixtures=fixtures_dump)
     return process_match_outcome(output)
 
 

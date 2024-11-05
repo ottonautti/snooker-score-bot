@@ -59,11 +59,13 @@ class SnookerSheet:
         """Get the current round number."""
         rounds = self.ss.values_get("nr_rounds").get("values")
         today = datetime.now().date()
-        for r in rounds:
+        for r in sorted(rounds, key=lambda x: int(x[0])):
+            round = int(r[0])
             start_date = datetime.strptime(r[1], SHEETS_DATE_FORMAT).date()
             end_date = datetime.strptime(r[2], SHEETS_DATE_FORMAT).date()
-            if start_date <= today <= end_date:
-                return int(r[0])
+            if end_date <= today:
+                # return the immediate next round, if today is after the end date
+                return round + 1
         return None
 
     @property
@@ -197,7 +199,7 @@ class SnookerSheet:
         def fixture_row(f):
             return [
                 f"{f.id_}" if header == 'id' else
-                f"{round}" if header == 'round' else
+                int(round) if header == 'round' else
                 f"{f.group}" if header == 'group' else
                 f"{f.player1}" if header == 'player1' else
                 f"{f.player2}" if header == 'player2' else
