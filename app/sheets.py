@@ -176,11 +176,11 @@ class SnookerSheet:
         """Append sheet with fixtures for the current round."""
         players = self.current_players
         # unique groups
-        groups = sorted(set([p.group for p in players]))
+        groups = {p.group for p in players}
 
         # get fixtures for each group
         fixtures = []
-        for group in groups:
+        for group in sorted(groups):
             group_players = [p for p in players if p.group == group]
             for p1, p2 in combinations(group_players, 2):
                 fixture = MatchFixture(

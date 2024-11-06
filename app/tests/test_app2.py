@@ -54,7 +54,7 @@ def test_make_fixtures(test_sheet, test_client):
 
 
 
-def test_update_match_outcome(test_sheet):
+# def test_update_match_outcome(test_sheet):
 
 
-def test_update_breaks(test_sheet):
+# def test_update_breaks(test_sheet):

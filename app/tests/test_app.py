@@ -12,6 +12,7 @@ from app.sheets import SnookerSheet
 
 from ..llm.fewshots_mock import MockFewShotData
 from ..llm.inference import SnookerScoresLLM
+import json
 
 
 class TestSettings(Settings):
@@ -25,7 +26,6 @@ TEST_SHEET = SnookerSheet(TEST_SETTINGS.SHEETID)
 os.environ["TWILIO_NO_SEND"] = "True"
 
 LLM_GOOGLE = SnookerScoresLLM(llm="vertexai")
-LLM_OPENAI = SnookerScoresLLM(llm="openai")
 
 
 class MockTwilio:
@@ -75,9 +75,7 @@ def test_e2e(monkeypatch):
     # Act
 
     # make the LLM return the mock match
-    with patch.object(
-        TEST_SHEET, "current_players", return_value=MockFewShotData.players
-    ):
+    with patch.object(TEST_SHEET, "current_players", return_value=MockFewShotData.players):
         response = client.post(
             "/scores/sms",
             data={
@@ -127,8 +125,21 @@ def test_e2e(monkeypatch):
 #     assert LLM_OPENAI.infer(passage, production_players) == LLM_GOOGLE.infer(passage, production_players)
 
 
-def adhoc_llm_tests(client: TestClient):
+@pytest.fixture()
+def mock_data():
+    return MockFewShotData()
 
+
+def test_inference_v2(mock_data):
+    for example in mock_data.examples:
+        passage = example["passage"]
+        fixtures = example["fixtures"]
+        expected = example["output"]
+        inferred = LLM_GOOGLE.infer(passage=passage, fixtures=fixtures)
+        assert inferred == expected
+
+
+def adhoc_llm_tests(client: TestClient):
     response = client.post(
         "/scores/sms",
         data={
