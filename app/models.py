@@ -41,7 +41,7 @@ class SnookerPlayer(BaseModel):
         return self.name.split()[-1] if len(self.name.split()) > 1 else self.name
 
     @property
-    def _gn(self) -> str:
+    def __llm_str__(self) -> str:
         """Returns the group and name in the format "Group: Name".
 
         This is used in LLM prompts."""

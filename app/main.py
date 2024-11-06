@@ -75,7 +75,7 @@ async def handle_scores(msg: TwilioInboundMessage, settings):
     llm = SnookerScoresLLM(llm=settings.LLM)
     """Handles inbound scores"""
     logging.info("Received message from %s: %s", msg.sender, msg.body)
-    valid_players = sheet.get_current_players()
+    valid_players = sheet.current_players
     try:
         output: dict = llm.infer(passage=msg.body, valid_players_txt=sheet.players_txt)
         snooker_match = get_match_model(valid_players=valid_players, max_score=settings.MAX_SCORE, **output)

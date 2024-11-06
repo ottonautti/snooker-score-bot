@@ -8,7 +8,6 @@ from typing import Literal
 from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains.llm import LLMChain
 from langchain_google_vertexai import VertexAI
-from langchain_openai import OpenAI
 
 from . import prompts
 
@@ -21,13 +20,12 @@ class SnookerScoresLLM:
     """LLM client for extracting snooker scores from messages"""
 
     llms = {
-        "openai": OpenAI,
         "vertexai": VertexAI,
     }
 
     def __init__(
         self,
-        llm: Literal["openai", "vertexai"] = "openai",
+        llm = "vertexai",
         model_name=None,
         prompt=None,
     ):
