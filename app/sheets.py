@@ -22,6 +22,8 @@ def get_helsinki_timestamp():
 
 def try_parse_date(date_str: str):
     """Tries to parse date from the assumed format. Returns original string if parsing fails."""
+    if not date_str:
+        return
     try:
         return datetime.strptime(date_str, SHEETS_DATE_FORMAT).date()
     except (TypeError, ValueError):
@@ -224,7 +226,7 @@ class SnookerSheet:
 
     def get_match_by_id(self, match_id: str) -> SnookerMatch:
         match, _ = self._get_match_data_by_id(match_id)
-        return MatchFixture(
+        return SnookerMatch(
             date=try_parse_date(match.pop("date", None)),
             player1=SnookerPlayer(name=match.pop("player1"), group=match.get("group")),
             player2=SnookerPlayer(name=match.pop("player2"), group=match.get("group")),
@@ -248,13 +250,13 @@ class SnookerSheet:
         Assert that player names according to sheet match the fixture.
         """
         # get the fixture data and row number per sheets
-        fixture_data = self.get_match_by_id(id_)
-        if fixture_data["winner"]:
+        sheets_match = self.get_match_by_id(id_)
+        if sheets_match.winner:
             raise ValueError(f"Match with ID {id_} already has a winner")
-        if fixture_data["player1"] != str(outcome.player1):
-            raise ValueError(f"Player1 mismatch: expected {fixture_data['player1']}, got {outcome.player1}")
-        if fixture_data["player2"] != str(outcome.player2):
-            raise ValueError(f"Player2 mismatch: expected {fixture_data['player2']}, got {outcome.player2}")
+        if sheets_match.player1 != outcome.player1:
+            raise ValueError(f"Player1 mismatch: expected {sheets_match['player1']}, got {outcome.player1}")
+        if sheets_match.player2 != outcome.player2:
+            raise ValueError(f"Player2 mismatch: expected {sheets_match['player2']}, got {outcome.player2}")
 
         match = SnookerMatch(id=id_, **outcome.model_dump())
         updates = {field: getattr(match, field) for field in ["player1_score", "player2_score", "winner"]}

@@ -1,12 +1,21 @@
-import json
+"""This module serves two purposes:
+
+1) Example data for LLM few-shot prompting used in production invocations
+2) TTD scaffolding for testing LLM prompting
+"""
+
+import random
 from dataclasses import asdict, dataclass
-from itertools import combinations
-from typing import Optional, Union
+from typing import Optional
 
-from app.llm.inference import SnookerScoresLLM
-from app.models import MatchFixture, SnookerPlayer
+from app.llm.inference import FixtureCollection, SnookerScoresLLM
+from app.models import MatchFixture, SnookerBreak, SnookerMatch, SnookerPlayer
 
-LLM = SnookerScoresLLM(llm="vertexai")
+
+def generate_match_id(length: int = 5) -> str:
+    """Generate a random ID for the fixture."""
+    #                             exclude ambiguous characters
+    return "".join(random.choices("abcdefghjkmnpqrstuvwxyz23456789", k=length))
 
 
 MOCK_PLAYERS = [
@@ -28,32 +37,11 @@ MOCK_PLAYERS = [
     SnookerPlayer(name="Eskelinen Tapio", group="L4"),
 ]
 
-
-class FixtureCollection:
-    def __init__(self, players):
-        self.players = players
-        self.fixtures = self.make_fixtures()
-
-    def make_fixtures(self) -> list[MatchFixture]:
-        groups = {plr.group for plr in self.players}
-        fixtures = []
-
-        for group in groups:
-            for p1, p2 in combinations([plr for plr in MOCK_PLAYERS if plr.group == group], 2):
-                fixtures.append(MatchFixture(group=group, player1=p1.name, player2=p2.name))
-
-        return fixtures
-
-    def get_fixture_id_by_players(self, *players: Union[str, list[str]]) -> Optional[str]:
-        if len(players) == 1 and isinstance(players[0], (list, tuple)):
-            players = players[0]
-        for fixture in self.fixtures:
-            if fixture.player1 in players and fixture.player2 in players:
-                return fixture.id_
-        return None
-
-
-FIXTURES = FixtureCollection(MOCK_PLAYERS)
+FIXTURES = FixtureCollection.from_players(MOCK_PLAYERS)
+LLM = SnookerScoresLLM(
+    target_model=SnookerMatch,
+    fixtures=FIXTURES.fixtures,
+)
 
 
 @dataclass
@@ -61,106 +49,110 @@ class InferenceExample:
     _llm = LLM
 
     passage: str
+    match: SnookerMatch
 
-    player1: str
-    player2: str
-    group: str
-    player1_score: int
-    player2_score: int
-    winner: str
-    breaks: list[dict]
+    def fixtures_csv(self) -> str:
+        return FIXTURES.as_csv()
 
-    expected: dict = None
-
-    def __post_init__(self):
-        self.expected = {
-            "id": FIXTURES.get_fixture_id_by_players([self.player1, self.player2]),
-            "group": self.group,
-            "player1": self.player1,
-            "player2": self.player2,
-            "player1_score": self.player1_score,
-            "player2_score": self.player2_score,
-            "winner": self.winner,
-            "breaks": self.breaks,
+    @property
+    def llm_expected(self) -> dict:
+        """The example JSON output for the LLM is derived from this."""
+        f_id = FIXTURES.get_fixture_id_by_players(self.match.players)
+        return {
+            "f_id": f_id,
+            "group": self.match.group,
+            "players": self.match.players,
+            "scores": self.match.scores,
+            "breaks": [SnookerBreak(**brk).model_dump() for brk in self.match.breaks],
         }
 
-    def infer(self):
-        apriori_examples = [ex for ex in EXAMPLES if ex != self]
-        return self._llm.infer(
+    @property
+    def expected(self) -> dict:
+        """The expected output from the LLM."""
+        m = self.match
+        return self.llm_expected | {
+            "winner": m.winner,
+            "loser": m.players[0] if m.players[1] == m.winner else m.players[1],
+            "winner_score": m.scores[0] if m.players[0] == m.winner else m.scores[1],
+            "loser_score": m.scores[1] if m.players[0] == m.winner else m.scores[0],
+        }
+
+    def infer(self) -> SnookerMatch:
+        """Run inference based on the passage."""
+        # can't include self in examples, that would be cheating.
+        apriori_examples = [e for e in EXAMPLES if e != self]
+        return self._llm.infer_match(
             passage=self.passage,
-            fixtures=json.dumps(FIXTURES.fixtures, default=lambda x: x.__dict__, ensure_ascii=False),
-            examples=[ex.dict() for ex in apriori_examples],
+            examples=[e.dict() for e in apriori_examples],
         )
 
     def test(self):
-        output = self.infer()
-        # the expected keys and values are present (at least)
-        assert all(output[k] == v for k, v in self.expected.items())
+        inferred: SnookerMatch = self.infer()
+        assert inferred.f_id == self.expected["f_id"]
+        assert inferred.group == self.expected["group"]
+        assert inferred.player1 in self.expected["players"]
+        assert inferred.player2 in self.expected["players"]
+        assert inferred.winner == self.expected["winner"]
+        assert inferred.loser == self.expected["loser"]
+        assert inferred.winner_score == self.expected["winner_score"]
+        assert inferred.loser_score == self.expected["loser_score"]
+        assert inferred.breaks == self.expected["breaks"]
 
     def dict(self):
-        """Return dataclass as dictionary, icnluding `fixtures` and `expected` attribute"""
-        return asdict(self) | {"fixtures": FIXTURES.fixtures}
+        """Return dataclass as dictionary"""
+        # TODO: clean this structure up
+        return {"passage": self.passage} | {"expected": self.llm_expected, "fixtures": self.fixtures_csv()}
 
 
 EXAMPLES = [
     InferenceExample(
-        passage="Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
-        player1="Huhtala Katja",
-        player2="Andersson Leila",
-        group="L1",
-        player1_score=2,
-        player2_score=1,
-        winner="Huhtala Katja",
-        breaks=[{"player": "Huhtala Katja", "points": 45}],
+        match=SnookerMatch(
+            passage="Aukusti v Yrjö 2-1, breikit Aukusti 25, Yrjö 18",
+            group="L3",
+            players=("Sjöblom Aukusti", "Kari Yrjö"),
+            scores=(2, 1),
+            winner="Sjöblom Aukusti",
+            breaks=[
+                {"player": "Sjöblom Aukusti", "points": 25},
+                {"player": "Kari Yrjö", "points": 18},
+            ],
+        )
     ),
     InferenceExample(
-        passage="Sinikka - Joonas 2-0",
-        player1="Laaksonen Sinikka",
-        player2="Tuomi Kari",
-        group="L2",
-        player1_score=2,
-        player2_score=0,
-        winner="Laaksonen Sinikka",
-        breaks=[],
+        match=SnookerMatch(
+            passage="Huhtala - Andersson 2-0. Breikki 45, Huhtala.",
+            group="L1",
+            players=("Huhtala Katja", "Andersson Leila"),
+            scores=(2, 0),
+            winner="Huhtala Katja",
+            breaks=[{"player": "Huhtala Katja", "points": 45}],
+        )
     ),
     InferenceExample(
-        passage="Valtteri v Anneli 2-1, breaks: Anneli 107, 101, Valtteri 52",
-        player1="Pulkkinen Valtteri",
-        player2="Tähtinen Anneli",
-        group="L4",
-        player1_score=2,
-        player2_score=1,
-        winner="Pulkkinen Valtteri",
-        breaks=[
-            {"player": "Tähtinen Anneli", "points": 107},
-            {"player": "Tähtinen Anneli", "points": 101},
-            {"player": "Pulkkinen Valtteri", "points": 52},
-        ],
+        match=SnookerMatch(
+            passage="Kari 0 - 2 Sinikka",
+            group="L2",
+            players=("Laaksonen Sinikka", "Tuomi Kari"),
+            scores=(2, 0),
+            winner="Laaksonen Sinikka",
+            breaks=[],
+        )
     ),
     InferenceExample(
-        passage="Aukusti v Yrjö 2-1, breikit Aukusti 25, Yrjö 18",
-        player1="Sjöblom Aukusti",
-        player2="Kari Yrjö",
-        group="L3",
-        player1_score=2,
-        player2_score=1,
-        winner="Sjöblom Aukusti",
-        breaks=[
-            {"player": "Sjöblom Aukusti", "points": 25},
-            {"player": "Kari Yrjö", "points": 18},
-        ],
-    ),
-    InferenceExample(
-        passage="Tähtinen 2 - Tero 1, ei breikkejä",
-        player1="Tähtinen Anneli",
-        player2="Saarela Tero",
-        group="L4",
-        player1_score=2,
-        player2_score=1,
-        winner="Tähtinen Anneli",
-        breaks=[],
+        match=SnookerMatch(
+            passage="Tähtinen 1 - Tero 2, ei breikkejä",
+            group="L4",
+            players=("Saarela Tero", "Tähtinen Anneli"),
+            scores=(2, 1),
+            winner="Tähtinen Anneli",
+            breaks=[],
+        )
     ),
 ]
+
+
+def examples_asdicts() -> list[dict]:
+    return [ex.dict() for ex in EXAMPLES]
 
 
 if __name__ == "__main__":

@@ -12,13 +12,16 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
+from app.llm.fewshots_mock import examples_asdicts
+
 from .llm.inference import SnookerScoresLLM
 from .models import (
     MatchFixture,
     MatchOutcome,
+    SnookerBreak,
     SnookerMatch,
     SnookerMatchList,
-    get_match_model,
+    ValidatedMatch,
 )
 from .settings import get_messages, get_settings
 from .sheets import SnookerSheet
@@ -40,7 +43,6 @@ def setup_logging():
 app = FastAPI()
 TWILIO = Twilio()
 SHEET = SnookerSheet(SETTINGS.SHEETID)
-LLM = SnookerScoresLLM(llm=SETTINGS.LLM)
 
 
 async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
@@ -58,35 +60,30 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
 
 
-def process_match_outcome(payload: dict, match_id: Optional[str] = None) -> SnookerMatch:
-    """Processes the match outcome and records it to the Google Sheet."""
-    valid_players = SHEET.current_players
-    try:
-        match = get_match_model(valid_players=valid_players, max_score=SETTINGS.MAX_SCORE, **payload)
-    except ValidationError as err:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=err.errors())
-    if match_id:
-        SHEET.record_match_outcome(id_=match_id, **match.model_dump())
+def save_match_with_breaks(payload: dict) -> SnookerMatch:
+    """Processes the match outcome and records it."""
+    breaks = []
+    # try:
+    for b in payload.pop("breaks", []):
+        player = next((player for player in match_model.valid_players if player.name == b.get("player")), None)
+        breaks.append(SnookerBreak(player=player, points=b.get("points")))
+    match: ValidatedMatch = match_model(**payload, breaks=breaks)
+    # except ValidationError as err:
+    # raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=err.errors())
+    SHEET.record_match_outcome(id_=match.id_, outcome=match)
     for brk in match.breaks:
         SHEET.record_break(brk.model_dump(), passage=payload["passage"], sender=payload["sender"])
     return match
 
 
-async def handle_scores_passage(passage: TwilioInboundMessage, settings):
+async def handle_scores_passage(passage: TwilioInboundMessage):
     """Handles inbound scores"""
     unplayed_matches = SHEET.get_matches(unplayed_only=True)
-    fixtures_dump = json.dumps(
-        [f.model_dump(include=["id_", "group", "player1", "player2"]) for f in unplayed_matches], ensure_ascii=False
+    llm = SnookerScoresLLM(
+        target_model=ValidatedMatch.configure_model(SHEET.current_players), fixtures=unplayed_matches
     )
-    output: dict = LLM.infer(passage=passage.body, fixtures=fixtures_dump)
-    return process_match_outcome(output)
-
-
-@app.exception_handler(Exception)
-async def handle_exception(req: Request, exc: Exception):
-    logging.exception(exc)
-    if not isinstance(exc, HTTPException):
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+    output: dict = llm.run(passage=passage.body, examples=examples_asdicts())
+    return save_match_with_breaks(output)
 
 
 def ok_response(**kwargs):
@@ -101,12 +98,12 @@ async def post_scores_sms(
     """Handles inbound scores via SMS"""
     logging.info("Received SMS from %s: %s", msg.sender, msg.body)
     try:
-        match = await handle_scores_passage(msg, SETTINGS)
+        match = await handle_scores_passage(msg)
     except ValidationError as err:
         reply = get_messages("eng").INVALID
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_messages)
-    reply = match.summary(match.passage_language)
+    reply = match.summary("eng")
     TWILIO.send_message(msg.sender, reply)
     return ok_response(message=reply, match=match.model_dump())
 
@@ -124,7 +121,7 @@ async def post_scores(
     """Handles inbound scores via API"""
     logging.info("Received API scores: %s", payload)
     try:
-        match = process_match_outcome(payload)
+        match = save_match_with_breaks(payload)
     except ValidationError as err:
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_messages)

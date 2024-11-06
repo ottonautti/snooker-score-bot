@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from datetime import datetime
@@ -12,7 +13,6 @@ from app.sheets import SnookerSheet
 
 from ..llm.fewshots_mock import MockFewShotData
 from ..llm.inference import SnookerScoresLLM
-import json
 
 
 class TestSettings(Settings):
@@ -135,7 +135,7 @@ def test_inference_v2(mock_data):
         passage = example["passage"]
         fixtures = example["fixtures"]
         expected = example["output"]
-        inferred = LLM_GOOGLE.infer(passage=passage, fixtures=fixtures)
+        inferred = LLM_GOOGLE.run(passage=passage, fixtures=fixtures)
         assert inferred == expected
 
 
