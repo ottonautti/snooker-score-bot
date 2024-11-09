@@ -11,16 +11,13 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
-from .llm.inference import SnookerScoresLLM
-from .models import get_match_model
-from .settings import get_settings, messages
-from .sheets import SnookerSheet
-from .twilio_client import Twilio, TwilioInboundMessage
-
+from app.llm.inference import SnookerScoresLLM
+from app.models import get_match_model
+from app.settings import get_settings, messages
+from app.sheets import SnookerSheet
+from app.twilio_client import Twilio, TwilioInboundMessage
 
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
-
-
 SETTINGS = get_settings()
 
 
