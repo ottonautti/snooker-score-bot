@@ -121,7 +121,7 @@ class SnookerSheet:
         timestamp = get_helsinki_timestamp()
         log = r"\r".join([timestamp, str(sender), passage])
         ordered_values = [
-            "",
+            "FROM_TWILIO",
             self.current_round,
             values["group"],
             values["player1"],
