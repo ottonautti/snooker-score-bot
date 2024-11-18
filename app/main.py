@@ -6,9 +6,9 @@ import os
 import sys
 
 import google.cloud.logging
-from fastapi import Depends, FastAPI, HTTPException, Request, status, BackgroundTasks
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import ValidationError
 
 from app.llm.inference import SnookerScoresLLM
@@ -52,12 +52,11 @@ twilio = Twilio()
 
 
 @app.post("/scores")
-async def post_scores(background_tasks: BackgroundTasks, msg=Depends(parse_twilio_msg)):
-    """Handles inbound scores coming in from Twilio.
-
-    Can't wait to process before returning as Twilio expects a response within 15 seconds."""
-    background_tasks.add_task(handle_scores, msg=msg, settings=SETTINGS)
-    return Response(status_code=status.HTTP_202_ACCEPTED)
+async def post_scores(
+    msg=Depends(parse_twilio_msg),
+):
+    """Handles inbound scores"""
+    return await handle_scores(settings=SETTINGS, msg=msg)
 
 
 @app.post("/scores/sixred24")
