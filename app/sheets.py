@@ -59,13 +59,12 @@ class SnookerSheet:
         """Get the current round number."""
         rounds = self.ss.values_get("nr_rounds").get("values")
         today = datetime.now().date()
-        for r in sorted(rounds, key=lambda x: int(x[0])):
+        for r in sorted(rounds, key=lambda x: int(x[0]), reverse=True):
             round = int(r[0])
             start_date = datetime.strptime(r[1], SHEETS_DATE_FORMAT).date()
             end_date = datetime.strptime(r[2], SHEETS_DATE_FORMAT).date()
-            if end_date <= today:
-                # return the immediate next round, if today is after the end date
-                return round + 1
+            if today >= start_date:
+                return round
         return None
 
     @property
