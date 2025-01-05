@@ -1,11 +1,10 @@
 import datetime
-import random
-from typing import Any, ClassVar, Literal, Optional, Union
+from enum import Enum
+from typing import Any, Optional, Union
 
 from jinja2 import Template
 from pydantic import (
     BaseModel,
-    FieldSerializationInfo,
     computed_field,
     field_serializer,
     field_validator,
@@ -13,10 +12,6 @@ from pydantic import (
     model_validator,
 )
 from pydantic.fields import Field
-
-from .settings import get_settings
-
-SETTINGS = get_settings()
 
 
 class SnookerPlayer(BaseModel):
@@ -50,40 +45,42 @@ class SnookerPlayer(BaseModel):
         return self.name
 
     @property
-    def first_name(self) -> str:
-        """Returns the first name if there is one, otherwise returns the full name.
-
-        In the data, names are formatted as "Last First".
-        """
+    def given_name(self) -> str:
+        """In the data, names are formatted as "Lastname Firstname"."""
         return self.name.split()[-1] if len(self.name.split()) > 1 else self.name
 
 
 class SnookerBreak(BaseModel):
-    player: Union[SnookerPlayer, str] = Field(default_factory=SnookerPlayer)
+    player: SnookerPlayer
     points: int = Field(gt=0, le=147)
+
+
+class MatchFormat(BaseModel):
+    bestOf: int
+    reds: int
+
+
+class MatchFormats(Enum):
+    BEST_OF_THREE = MatchFormat(bestOf=3, reds=15)
 
 
 class MatchFixture(BaseModel):
     """Match fixture i.e. an unplayed match between two players of a group"""
 
-    f_id: Optional[str] = None
+    f_id: Optional[str] = Field(default=None)
     round: Optional[int] = Field(alias="round", default=None)
     group: str
-    players: list[Union[SnookerPlayer, str], Union[SnookerPlayer, str]]
+    player1: Union[SnookerPlayer, str]
+    player2: Union[SnookerPlayer, str]
+    format: MatchFormat = Field(default_factory=lambda: MatchFormats.BEST_OF_THREE.value)
 
     @model_validator(mode="before")
     def convert_players(self):
         """Convert player names to player objects."""
-        players = self.get("players", [])
-        for i, player in enumerate(players):
-            if isinstance(player, str):
-                players[i] = SnookerPlayer(name=player, group=self["group"])
+        if isinstance(self["player1"], str):
+            self["player1"] = SnookerPlayer(name=self["player1"], group=self["group"])
+            self["player2"] = SnookerPlayer(name=self["player2"], group=self["group"])
         return self
-
-    @field_serializer("players")
-    def serialize_players(self, value: Any, info: FieldSerializationInfo) -> str:
-        """Returns the player names when serializing the model."""
-        return " vs. ".join([p.name for p in value])
 
     @computed_field
     def state(self) -> str:
@@ -110,56 +107,24 @@ class MatchOutcome(BaseModel):
     """Match outcome i.e. a completed match with scores and breaks"""
 
     date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
-    scores: tuple[int, int]  # with respect to MatchFixture.players
+    player1_score: int
+    player2_score: int
     breaks: list[SnookerBreak] = Field(default_factory=list)
+
+    @computed_field
+    def scoreline(self) -> str:
+        return f"{self.player1_score}-{self.player2_score}"
 
 
 class SnookerMatch(MatchFixture, MatchOutcome):
     """Complete snooker match with scores and breaks"""
-
-    player1: Union[SnookerPlayer, str]
-    player2: Union[SnookerPlayer, str]
-    player1_score: int
-    player2_score: int
-
-    def __eq_score__(self, value: object) -> bool:
-        """The order of players can be reversed, if the scores are also reversed."""
-        if isinstance(value, MatchOutcome):
-            if self.breaks != value.breaks:
-                return False
-            elif self.scores == value.scores and self.players == value.players:
-                return True
-            # if the scores are reversed, the players should also be reversed
-            elif self.scores == value.scores[::-1] and self.players == value.players[::-1]:
-                return True
-        return False
-
-    @model_validator(mode="before")
-    @classmethod
-    def assign_players_and_scores(cls, data: Any) -> Any:
-        """Assign players to player1 and player2."""
-        data["player1"] = data["players"][0]
-        data["player2"] = data["players"][1]
-        data["player1_score"] = data["scores"][0]
-        data["player2_score"] = data["scores"][1]
-        return data
-
-    @model_validator(mode="after")
-    @classmethod
-    def lookup_fixture(cls, data: Any) -> Any:
-        """If fixture id not explicitly passed, lookup the fixture for the match."""
-        if not data.f_id:
-            fixture = next((f for f in cls._fixtures if all(p in f.players for p in cls.players)), None)
-            assert fixture, f"Fixture not found for players {cls.players}"
-            data.f_id = fixture.f_id
-        return data
 
     @model_validator(mode="after")
     @classmethod
     def breaks_are_by_match_players(cls, data: Any) -> Any:
         """Breaks have to be by one of the match players"""
         for b in data.breaks:
-            assert b.player in data.players, f"Break by {b.player}, not a player in this match"
+            assert b.player in (data.player1, data.player2), f"Break by {b.player} not in match"
         return data
 
     @field_serializer("date")
@@ -172,26 +137,7 @@ class SnookerMatch(MatchFixture, MatchOutcome):
     @computed_field
     def winner(self) -> str:
         """Returns the winner of the match."""
-        if self.scores[0] == self.scores[1]:
-            return None
-        return self.players[0] if self.scores[0] > self.scores[1] else self.players[1]
-
-    @computed_field
-    def winner_score(self) -> int:
-        """Returns the winner's score."""
-        return self.scores[0] if self.players[0] == self.winner else self.scores[1]
-
-    @computed_field
-    def loser_score(self) -> int:
-        """Returns the loser's score."""
-        return self.scores[0] if self.players[0] == self.loser else self.scores
-
-    @computed_field
-    def loser(self) -> str:
-        """Returns the winner of the match."""
-        if self.scores[0] == self.scores[1]:
-            return None
-        return self.players[0] if self.scores[0] < self.scores[1] else self.players[1]
+        return self.player1 if self.player1_score > self.player2_score else self.player2
 
     @computed_field
     def highest_break(self) -> Optional[int]:
@@ -206,7 +152,7 @@ class SnookerMatch(MatchFixture, MatchOutcome):
     def _get_state(self) -> str:
         """Determine the state of the snooker match."""
         # if scores are equal, the match is unplayed
-        if self.scores[0] != self.scores[1]:
+        if all([self.player1_score, self.player2_score]):
             return "completed"
         return "unplayed"
 
@@ -216,19 +162,21 @@ class SnookerMatch(MatchFixture, MatchOutcome):
         assert group in {p.group for p in cls._valid_players}, f"Group '{group}' is not a valid group"
         return group
 
-    @field_validator("scores")
-    def valid_score(cls, score):
-        """Scores must be between 0 and max_score"""
-        assert all(0 <= s <= cls._max_score for s in score), f"Scores must be between 0 and {cls._max_score}"
-        return score
+    @model_validator(mode="after")
+    def valid_score(self):
+        """Scores must conform to match format"""
+        frames_to_win = self.format.bestOf // 2 + 1
+        if max(self.player1_score, self.player2_score) != frames_to_win:
+            raise ValueError(f"Scoreline {self.scoreline} do not match the match format: {self.format}")
+        return self
 
-    @field_validator("players")
-    def lookup_players(cls, values):
-        """Convert player names to player objects."""
-        for i, player in enumerate(values):
-            if isinstance(player, str):
-                values[i] = next((p for p in cls._valid_players if p.name == player), None)
-        return values
+    # @field_validator("players")
+    # def lookup_players(cls, values):
+    #     """Convert player names to player objects."""
+    #     for i, player in enumerate(values):
+    #         if isinstance(player, str):
+    #             values[i] = next((p for p in cls._valid_players if p.name == player), None)
+    #     return values
 
     @model_validator(mode="after")
     def check_players(self):
@@ -239,9 +187,9 @@ class SnookerMatch(MatchFixture, MatchOutcome):
         """
         fixture = next((f for f in self._fixtures if f.f_id == self.f_id), None)
         assert fixture, f"Fixture with ID {self.f_id} not found in fixtures"
+        assert self.player1 != self.player2, "Players can not be the same"
         assert self.group == fixture.group, f"Group mismatch: {self.group} != {fixture.group}"
-        assert all(p in fixture.players for p in self.players), f"Players not in fixture"
-        assert self.players[0] != self.players[1], "Players can not be the same"
+        assert fixture.player1 == self.player1 and fixture.player2 == self.player2, "Players do not match fixture"
         return self
 
     def summary(self, lang="eng") -> str:
@@ -249,35 +197,16 @@ class SnookerMatch(MatchFixture, MatchOutcome):
 
         TEMPLATES = {
             "eng": Template(
-                #                 """
-                # {%- if match.player1_score == match.player2_score -%}
-                #     Match between {{ player1 }} and {{ player2 }} ended in a draw at {{ player1_score }} frames each.
-                # {%- else -%}
-                #     {{ winner }} won {{ loser }} by {{ winner_score }} frames to {{ loser_score }}.
-                # {% endif -%} {%- if match.breaks -%}
-                #     Breaks: {% for b in match.breaks -%} {{ b.player.first_name }} {{ b.points }} {%- if not
-                #     loop.last %}, {% endif %}{%- endfor -%}.
-                # {%- endif -%}"""
                 """
 {{ self.winner }} won {{ loser }} by {{ winner_score }} frames to {{ loser_score }}.
 {%- if match.breaks -%}
-    Breaks: {% for b in match.breaks -%} {{ b.player.first_name }} {{ b.points }} {%- if not
+    Breaks: {% for b in match.breaks -%} {{ b.player.given_name }} {{ b.points }} {%- if not
     loop.last %}, {% endif %}{%- endfor -%}.
 {%- endif -%}
 """
             ),
         }
 
-        # Choose the template based language of the original passage
-        # summary = TEMPLATES[lang].render(
-        #     match=self,
-        #     player1=self.player1,
-        #     player2=self.player2,
-        #     winner=winner,
-        #     loser=loser,
-        #     winner_score=winner_score,
-        #     loser_score=loser_score,
-        # )
         summary = TEMPLATES[lang].render(
             match=self,
             winner=self.winner,
@@ -286,53 +215,14 @@ class SnookerMatch(MatchFixture, MatchOutcome):
             loser_score=self.loser_score,
         )
 
-        sheet_url = SETTINGS.SHEET_SHORTLINK
-        link_line = {
-            "eng": f"League standings: {sheet_url}",
-            "fin": f"Sarjataulukko: {sheet_url}",  # TODO
-        }
-        return f"{summary}\n{link_line[lang]}"
+        return f"{summary}"
 
     @classmethod
-    def configure_model(cls, fixtures: list[MatchFixture], max_score: Optional[int] = 2):
-        cls._max_score = max_score
+    def configure_model(cls, fixtures: list[MatchFixture]):
+        """Configure the model with valid players from fixtures."""
         cls._fixtures = fixtures
-        cls._valid_players = {player for fixture in fixtures for player in fixture.players}
+        cls._valid_players = {p for f in fixtures for p in (f.player1, f.player2)}
         return cls
-
-
-# def get_match_model(valid_players: list[SnookerPlayer], max_score: Optional[int] = 2, **inputs) -> ValidatedMatch:
-#     """Returns a version of the model with valid players set at runtime.
-
-#     Inputs are inferred from the passage and should follow:
-#     {
-#         "group": "L4",
-#         "player1": "Paavola Tuomas",
-#         "player2": "Marko Ossi",
-#         "player1_score": 2,
-#         "player2_score": 0,
-#         "breaks": [{"player": "Paavola Tuomas", "points": 16}, {"player": "Paavola Tuomas", "points": 22}],
-#         "language": "eng",
-#     }
-#     """
-
-#     # configure the match model given valid players and max score
-#     ValidatedMatch.configure_model(valid_players, max_score)
-
-#     breaks = []
-#     for b in inputs.get("breaks", []):
-#         player = next((player for player in valid_players if player.name == b.get("player")), None)
-#         breaks.append(SnookerBreak(player=player, points=b.get("points")))
-
-#     return ValidatedMatch(
-#         group=inputs.get("group"),
-#         player1=inputs.get("player1"),
-#         player2=inputs.get("player2"),
-#         player1_score=inputs.get("player1_score"),
-#         player2_score=inputs.get("player2_score"),
-#         breaks=breaks,
-#         passage_language=inputs.get("language"),
-#     )
 
 
 class SnookerMatchList(BaseModel):
