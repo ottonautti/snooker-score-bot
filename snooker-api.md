@@ -18,7 +18,7 @@
         "id": "string",  // unique identifier for the fixture/match
         "format": {
           "reds": "int",   // number of red balls on the table
-          "bestOf": "int", // number of frames to be played at most
+          "best_of": "int", // number of frames to be played at most
         },
         "group": "string",   // group identifier
         "player1": "string", // player1 name "Lastname Firstname"
@@ -37,7 +37,7 @@
         {
           "id": "y98ad",
           "format": {
-            "bestOf": 3,
+            "best_of": 3,
             "reds": "15"
           },
           "group": "L1",
@@ -48,7 +48,7 @@
         {
           "id": "kdxcc",
           "format": {
-            "bestOf": 3,
+            "best_of": 3,
             "reds": "15"
           },
           "group": "L1",
@@ -59,7 +59,7 @@
         {
           "id": "ef5zb",
           "format": {
-            "bestOf": 3,
+            "best_of": 3,
             "reds": "15"
           },
           "group": "L1",
@@ -70,7 +70,7 @@
         {
           "id": "k44cj",
           "format": {
-            "bestOf": 3,
+            "best_of": 3,
             "reds": "15"
           },
           "group": "L1",
@@ -126,6 +126,7 @@
 
 ### Responses:
 * HTTP 201 Created
-* HTTP 400 Bad Request (if request is invalid)
+* HTTP 422/400 Bad Request (if request is invalid)
 * HTTP 401 Unauthorized (if authorization header is missing or invalid)
 * HTTP 404 Not Found (if fixture not found)
+* HTTP 409 Conflict (if score has already been submitted for the fixture)

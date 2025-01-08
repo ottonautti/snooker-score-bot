@@ -1,7 +1,10 @@
 import datetime
+import random
+import string
 from itertools import permutations
 
 import pytest
+from pydantic import ValidationError
 
 from app.models import (
     MatchFixture,
@@ -17,24 +20,27 @@ from app.models import (
 @pytest.fixture
 def mock_players():
     return [
-        SnookerPlayer(name="Doe John", group="A"),
-        SnookerPlayer(name="Doe Jane", group="A"),
-        SnookerPlayer(name="Beam Jim", group="A"),
-        SnookerPlayer(name="Smith Alice", group="B"),
-        SnookerPlayer(name="Brown Bob", group="B"),
-        SnookerPlayer(name="Black Charlie", group="B"),
+        SnookerPlayer(name="Doe John", group="L1"),
+        SnookerPlayer(name="Doe Jane", group="L1"),
+        SnookerPlayer(name="Beam Jim", group="L1"),
+        SnookerPlayer(name="Smith Alice", group="L2"),
+        SnookerPlayer(name="Brown Bob", group="L2"),
+        SnookerPlayer(name="Black Charlie", group="L2"),
     ]
 
 
 @pytest.fixture
 def mock_fixtures(mock_players):
-    """return a list of MatchFixture objects, all permutaions of the mock players (noting groups)"""
+    """return a list of MatchFixture objects, all permutations of the mock players (noting groups)"""
     fixtures = []
-    for player1, player2 in permutations(mock_players, 2):
+    perms = permutations(mock_players, 2)
+    for i, (player1, player2) in list(enumerate(perms)):
         if player1.group == player2.group:
+            # 5 lower case ascii characters
+            new_id = "".join(random.choices(string.ascii_lowercase, k=5))
             fixtures.append(
                 MatchFixture(
-                    f_id=f"{player1.name} vs {player2.name}",
+                    match_id=new_id,
                     round=1,
                     group=player1.group,
                     player1=player1,
@@ -45,15 +51,10 @@ def mock_fixtures(mock_players):
     return fixtures
 
 
-@pytest.fixture
-def match_model(mock_fixtures):
-    return SnookerMatch.configure_model(fixtures=mock_fixtures)
-
-
 def test_snooker_player(mock_players):
     player = mock_players[0]
     assert player.name == "Doe John"
-    assert player.group == "A"
+    assert player.group == "L1"
     assert str(player) == "Doe John"
     assert player.given_name == "John"
 
@@ -67,41 +68,62 @@ def test_snooker_break(mock_players):
 
 def test_match_format():
     format = MatchFormats.BEST_OF_THREE.value
-    assert format.bestOf == 3
-    assert format.reds == 15
+    assert format.best_of == 3
+    assert format.num_reds == 15
 
 
 def test_match_fixture(mock_players):
     fixture = MatchFixture(
-        f_id="1",
+        match_id="abc12",
         round=1,
-        group="A",
+        group="L1",
         player1=mock_players[0],
         player2=mock_players[1],
     )
-    assert fixture.f_id == "1"
-    assert fixture.round == 1
-    assert fixture.group == "A"
-    assert fixture.player1.name == "Doe John"
-    assert fixture.player2.name == "Doe Jane"
-    assert fixture.format.bestOf == 3
-    assert fixture.format.reds == 15
+    md = fixture.model_dump()
+    assert md["match_id"] == "abc12"
+    assert md["round"] == 1
+    assert md["group"] == "L1"
+    assert md["player1"] == "Doe John"
+    assert md["player2"] == "Doe Jane"
 
 
-def test_snooker_match(match_model, mock_players):
-    fixture = match_model._fixtures[0]
+def test_snooker_match(mock_fixtures):
+    fixture = mock_fixtures[0]
+    assert fixture.completed is False
     outcome = MatchOutcome(player1_score=2, player2_score=1, date=datetime.date(2025, 1, 1))
-    match = SnookerMatch(**fixture.model_dump(), **outcome.model_dump())
-    assert match.player1 == fixture.player1
-    assert match.player2 == fixture.player2
-    assert match.format.bestOf == 3
-    assert match.format.reds == 15
-    assert match.player1_score == 2
-    assert match.player2_score == 1
-    assert match.date == datetime.date(2025, 1, 1)
+    match = SnookerMatch(**fixture.model_dump(), outcome=outcome)
+    md = match.model_dump()
+    assert match.validate_against_fixture(fixture)
+    assert md["completed"] is True
+    assert md["player1"] == "Doe John"
+    assert md["player2"] == "Doe Jane"
+    assert md["format"]["best_of"] == 3
+    assert md["format"]["num_reds"] == 15
+    assert md["outcome"] == {
+        "date": datetime.date(2025, 1, 1),
+        "player1_score": 2,
+        "player2_score": 1,
+        "breaks": [],
+    }
 
-def test_snooker_match_invalid_outcome(match_model):
-    fixture = match_model._fixtures[0]
-    with pytest.raises(ValueError):
-        outcome = MatchOutcome(player1_score=1, player2_score=1, date=datetime.date(2025, 1, 1))
-        match = SnookerMatch(**fixture.model_dump(), **outcome.model_dump())
+
+def test_snooker_match_invalid_scorelines():
+    """Test that a match outcome with an invalid scoreline raises a ValueError"""
+    # with pytest.raises(ValueError):
+    match = SnookerMatch(
+        match_id="abc12",
+        player1="Doe John",
+        player2="Doe Jane",
+        group="L1",
+        round=1,
+        format=MatchFormat(best_of=3, num_reds=15),
+    )
+    with pytest.raises(ValidationError):
+        match.outcome = MatchOutcome(player1_score=1, player2_score=1)
+    with pytest.raises(ValidationError):
+        match.outcome = MatchOutcome(player1_score=2, player2_score=2)
+    with pytest.raises(ValidationError):
+        match.outcome = MatchOutcome(player1_score=3, player2_score=2)
+    with pytest.raises(ValidationError):
+        match.outcome = MatchOutcome(player1_score=2, player2_score=-1)

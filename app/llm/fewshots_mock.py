@@ -31,7 +31,7 @@ class MockFewShotData(FewShotData):
     def examples(self):
         return [
             {
-                "valid_players": "\n".join([str(plr) for plr in self.players]),
+                "known_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
                 "output": to_json(
                     {
@@ -52,7 +52,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "valid_players": "\n".join([str(plr) for plr in self.players]),
+                "known_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Sinikka - Joonas 2-0",
                 "output": to_json(
                     {
@@ -68,7 +68,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "valid_players": "\n".join([str(plr) for plr in self.players]),
+                "known_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Valtteri v Anneli 2-1, breaks: Anneli 107, 101, Valtteri 52",
                 "output": to_json(
                     {
@@ -97,7 +97,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "valid_players": "\n".join([str(plr) for plr in self.players]),
+                "known_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Aukusti v Yrjö 2-1, breikit Aukusti 25, Yrjö 18",
                 "output": to_json(
                     {
@@ -122,7 +122,7 @@ class MockFewShotData(FewShotData):
                 ),
             },
             {
-                "valid_players": "\n".join([str(plr) for plr in self.players]),
+                "known_players": "\n".join([str(plr) for plr in self.players]),
                 "passage": "Ahonen 2 - Tero 1, ei breikkejä",
                 "output": to_json(
                     {

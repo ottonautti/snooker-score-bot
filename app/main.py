@@ -1,19 +1,22 @@
 """FastAPI app for recording snooker match outcomes reported by users."""
 
-import json
 import logging
 import os
 import sys
-from typing import Optional
+from typing import List, Literal, Optional
 
 import google.cloud.logging
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
-from app.llm.fewshots_mock import examples_asdicts
-
+from .errors import (
+    InvalidContentType,
+    InvalidMatchError,
+    MatchAlreadyCompleted,
+    MatchNotFound,
+)
 from .llm.inference import SnookerScoresLLM
 from .models import (
     MatchFixture,
@@ -21,7 +24,6 @@ from .models import (
     SnookerBreak,
     SnookerMatch,
     SnookerMatchList,
-    ValidatedMatch,
 )
 from .settings import get_messages, get_settings
 from .sheets import SnookerSheet
@@ -29,6 +31,9 @@ from .twilio_client import Twilio, TwilioInboundMessage
 
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
 SETTINGS = get_settings()
+TWILIO = Twilio()
+SHEET = SnookerSheet(SETTINGS.SHEETID)
+LLM = SnookerScoresLLM()
 
 
 def setup_logging():
@@ -41,157 +46,136 @@ def setup_logging():
 
 
 app = FastAPI()
-TWILIO = Twilio()
-SHEET = SnookerSheet(SETTINGS.SHEETID)
+
+
+def authorize(authorization: str = Header(None)):
+    if authorization != SETTINGS.API_SECRET:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized")
+
+
+# Targeted by Twilio webhooks
+twilio_router = APIRouter(prefix="/sms")
+
+# Targeted by scorer app
+v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize)])
 
 
 async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     """Returns inbound Twilio message details from request form data"""
     # expect application/x-www-form-urlencoded
     if req.headers["Content-Type"] != "application/x-www-form-urlencoded":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid Content-Type")
+        raise InvalidContentType("application/x-www-form-urlencoded")
     form_data = await req.form()
     body = form_data.get("Body")
     sender = form_data.get("From")
     # set is_test to True if the message contains TEST
     is_test = bool(body and "TEST" in body)
     if not body or not sender:
-        raise HTTPException(status_code=400, detail="Invalid Twilio message")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Twilio message")
     return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
 
 
-def save_match_with_breaks(payload: dict) -> SnookerMatch:
-    """Processes the match outcome and records it."""
-    breaks = []
-    # try:
-    for b in payload.pop("breaks", []):
-        player = next((player for player in match_model.valid_players if player.name == b.get("player")), None)
-        breaks.append(SnookerBreak(player=player, points=b.get("points")))
-    match: ValidatedMatch = match_model(**payload, breaks=breaks)
-    # except ValidationError as err:
-    # raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=err.errors())
-    SHEET.record_match_outcome(id_=match.id_, outcome=match)
-    for brk in match.breaks:
-        SHEET.record_break(brk.model_dump(), passage=payload["passage"], sender=payload["sender"])
-    return match
-
-
-async def handle_scores_passage(passage: TwilioInboundMessage):
-    """Handles inbound scores"""
-    unplayed_matches = SHEET.get_matches(unplayed_only=True)
-    llm = SnookerScoresLLM(
-        target_model=ValidatedMatch.configure_model(SHEET.current_players), fixtures=unplayed_matches
-    )
-    output: dict = llm.run(passage=passage.body, examples=examples_asdicts())
-    return save_match_with_breaks(output)
-
-
-def ok_response(**kwargs):
+def ok_created(**kwargs):
     """Returns a successful response"""
-    return JSONResponse(status_code=status.HTTP_201_CREATED, content=jsonable_encoder(kwargs))
+    return JSONResponse(jsonable_encoder(kwargs), status.HTTP_201_CREATED)
 
 
-@app.post("/scores/sms", include_in_schema=False)
-async def post_scores_sms(
-    msg=Depends(parse_twilio_msg),
-):
+@twilio_router.post("/scores", include_in_schema=False)
+async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     """Handles inbound scores via SMS"""
     logging.info("Received SMS from %s: %s", msg.sender, msg.body)
+    inference: dict = LLM.infer(passage=msg.body, known_players=SHEET.current_players)
+    inferred_fixture = SHEET.lookup_match_by_player_names((inference["player1"], inference["player2"]))
+    if not inferred_fixture:
+        raise MatchNotFound()
+    if inferred_fixture.completed:
+        raise MatchAlreadyCompleted()
+    match_data = inferred_fixture.model_dump()
+    reply: str = ""
+    breaks = [SnookerBreak.from_dict(b) for b in inference.get("breaks", [])]
     try:
-        match = await handle_scores_passage(msg)
+        match = SnookerMatch(**match_data).validate_against_fixture(inferred_fixture)
+        match.outcome = MatchOutcome(
+            player1_score=inference["player1_score"], player2_score=inference["player2_score"], breaks=breaks
+        )
+        reply = match.summary("eng")
     except ValidationError as err:
         reply = get_messages("eng").INVALID
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_messages)
-    reply = match.summary("eng")
-    TWILIO.send_message(msg.sender, reply)
-    return ok_response(message=reply, match=match.model_dump())
+        raise InvalidMatchError(error_messages)
+    finally:
+        TWILIO.send_message(msg.sender, reply)
+
+    SHEET.record_match(match)
+    return ok_created(message=reply, match=match.model_dump())
 
 
-@app.post(
-    "/scores/{id}",
-    response_model=SnookerMatch,
-    summary="Record match outcome",
-    response_description="Recorded match details",
-)
-async def post_scores(
-    id: str,
-    payload: MatchOutcome,
-):
+class BreakRequest(BaseModel):
+    player: Literal["player1", "player2"]
+    points: int
+
+
+class ScoreRequest(BaseModel):
+    breaks: list[BreakRequest]
+    player1_score: int
+    player2_score: int
+
+
+@v1_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
+async def post_scores(body: ScoreRequest, match_id: str):
     """Handles inbound scores via API"""
-    logging.info("Received API scores: %s", payload)
-    try:
-        match = save_match_with_breaks(payload)
-    except ValidationError as err:
-        error_messages: list[str] = [err.get("msg") for err in err.errors()]
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=error_messages)
-    return ok_response(match=match.model_dump())
+    logging.info("Received API scores: %s", body)
+    match: SnookerMatch = await get_match_by_id(match_id)
+    if match.completed:
+        raise MatchAlreadyCompleted()
+    breaks = []
+    for brk in body.breaks:
+        break_by: Literal["player1", "player2"] = brk.player
+        breaks.append(SnookerBreak(player=getattr(match, break_by), points=brk.points))
+    match.outcome = MatchOutcome(player1_score=body.player1_score, player2_score=body.player2_score, breaks=breaks)
+    SHEET.record_match(match)
+    return ok_created(match=match.model_dump())
+
+
+@app.exception_handler(ValidationError)
+async def handle_validation_error(req: Request, exc: ValidationError):
+    error_messages: list[str] = [err.get("msg") for err in exc.errors()]
+    raise InvalidMatchError(error_messages)
 
 
 @app.exception_handler(Exception)
 async def handle_exception(req: Request, exc: Exception):
     logging.exception(exc)
-    if not isinstance(exc, HTTPException):
-        return JSONResponse(status_code=500, content={"detail": "Internal server error"})
-
-
-async def fetch_matches(settings, unplayed_only: bool = False, round: Optional[str] = None) -> list[SnookerMatch]:
-    """Fetch matches based on the provided parameters."""
-    sheet = SnookerSheet(settings.SHEETID)
-    matches: list[SnookerMatch] = sheet.get_matches(unplayed_only=unplayed_only, round=round)
-    return matches
-
-
-async def fetch_match_by_id(settings, match_id: str) -> SnookerMatch:
-    """Fetch a single match by its ID."""
-    sheet = SnookerSheet(settings.SHEETID)
-    match = sheet.get_match_by_id(match_id)
-    if not match:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
-    return match
-
-
-@app.get("/fixtures")
-async def get_fixtures(settings=Depends(SETTINGS)) -> list[MatchFixture]:
-    """Returns scheduled matches for the current round."""
-    sheet = SnookerSheet(settings.SHEETID)
-    current_round = sheet.current_round
-    fixtures = await fetch_matches(settings, unplayed_only=True, round=current_round)
-    fixtures_out = [fixture.model_dump(by_alias=True) for fixture in fixtures]
-    return JSONResponse(content={"round": current_round, "fixtures": fixtures_out})
-
-
-@app.get("/matches", response_model=SnookerMatchList, response_model_exclude_unset=True)
-async def get_matches(unplayed: bool = False, completed: bool = False, round: int = None, settings=Depends(SETTINGS)):
-    """Returns all matches or only unplayed matches if 'unplayed' is True."""
-    current_round = None
-    if unplayed or round is None:
-        sheet = SnookerSheet(settings.SHEETID)
-        current_round = sheet.current_round
-    matches = await fetch_matches(settings, unplayed_only=unplayed, round=round or current_round)
-    matches_dump = [
-        m.model_dump(
-            exclude_none=True,
-            exclude_unset=True,
-            exclude="breaks",  # TODO: fetch breaks to the response
-        )
-        for m in matches
-    ]
-    matches_list = SnookerMatchList(matches=matches_dump, round=current_round)
-    if unplayed:
-        content = matches_list.model_dump(by_alias=True, include={"round", "unplayed"})
-    elif completed:
-        content = matches_list.model_dump(by_alias=True, include={"round", "completed"})
+    if isinstance(exc, HTTPException):
+        return JSONResponse({"detail": exc.detail}, exc.status_code)
     else:
-        content = matches_list.model_dump(by_alias=True, include={"round", "matches"})
-    return JSONResponse(content=content)
+        return JSONResponse({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@app.get("/matches/{id}", response_model=SnookerMatch)
-async def get_match_by_id(id: str, settings=Depends(SETTINGS)):
+@v1_api.get("/fixtures", response_model=SnookerMatchList)
+async def get_fixtures():
+    """Returns scheduled matches for the current round."""
+    fixtures_list = SnookerMatchList(round=SHEET.current_round, matches=SHEET.get_fixtures())
+    return JSONResponse(content=fixtures_list.model_dump(by_alias=True))
+
+
+async def get_match_by_id(match_id: str) -> SnookerMatch:
     """Returns a specific match by ID."""
-    match = await fetch_match_by_id(settings, id)
+    try:
+        return SHEET.get_match_by_id(match_id)
+    except LookupError:
+        raise MatchNotFound()
+
+
+@v1_api.get("/matches/{match_id}", response_model=SnookerMatch)
+async def get_match(match_id: str):
+    """Returns a specific match by ID."""
+    match = await get_match_by_id(match_id)
     return JSONResponse(content=match.model_dump(by_alias=True))
 
+
+# Include the routers in the FastAPI app
+app.include_router(twilio_router)
+app.include_router(v1_api)
 
 setup_logging()

@@ -3,11 +3,12 @@
 import json
 import logging
 import os
-from typing import Literal
 
 from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains.llm import LLMChain
 from langchain_google_vertexai import VertexAI
+
+from app.models import SnookerPlayer
 
 from . import prompts
 
@@ -19,31 +20,27 @@ stdout_handler = StdOutCallbackHandler()
 class SnookerScoresLLM:
     """LLM client for extracting snooker scores from messages"""
 
-    llms = {
-        "vertexai": VertexAI,
-    }
-
     def __init__(
         self,
-        llm = "vertexai",
+        llm=VertexAI,  # default to VertexAI (Google)
         model_name=None,
         prompt=None,
     ):
-        if model_name is None:
-            self.llm = self.llms[llm]()
-        else:
-            self.llm = self.llms[llm](model_name=model_name)
+        self.llm = llm(model_name=model_name)
         self.verbose = bool(os.getenv("LANGCHAIN_VERBOSE", False))
         if not prompt:
             prompt = prompts.get_prompt()
         self.prompt = prompt
 
-    def infer(self, passage: str, valid_players_txt: str) -> dict:
+    def infer(self, passage: str, known_players: list[SnookerPlayer]):
+        """Infer snooker scores from a passage of text and a list of known players."""
+        logging.info(f"Calling LLM with passage: {passage}")
+        known_players_txt = "\n".join([plr.__llm_str__() for plr in known_players])
         chain = LLMChain(llm=self.llm, prompt=self.prompt, verbose=self.verbose, callbacks=[stdout_handler])
         output = chain.invoke(
             {
                 "passage": passage,
-                "players_list": valid_players_txt,
+                "players_list": known_players_txt,
             }
         )
         try:
