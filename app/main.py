@@ -8,6 +8,7 @@ from typing import List, Literal, Optional
 import google.cloud.logging
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -46,6 +47,13 @@ def setup_logging():
 
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def authorize(authorization: str = Header(None)):
