@@ -93,16 +93,16 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     """Handles inbound scores via SMS"""
     logging.info("Received SMS from %s: %s", msg.sender, msg.body)
     inference: dict = LLM.infer(passage=msg.body, known_players=SHEET.current_players)
-    inferred_fixture = SHEET.lookup_match_by_player_names((inference["player1"], inference["player2"]))
-    if not inferred_fixture:
+    target_fixture = SHEET.lookup_match_by_player_names((inference["player1"], inference["player2"]))
+    if not target_fixture:
         raise MatchNotFound()
-    if inferred_fixture.completed:
+    if target_fixture.completed:
         raise MatchAlreadyCompleted()
-    match_data = inferred_fixture.model_dump()
+    match_data = target_fixture.model_dump()
     reply: str = ""
     breaks = [SnookerBreak.from_dict(b) for b in inference.get("breaks", [])]
     try:
-        match = SnookerMatch(**match_data).validate_against_fixture(inferred_fixture)
+        match = SnookerMatch(**match_data).validate_against_fixture(target_fixture)
         match.outcome = MatchOutcome(
             player1_score=inference["player1_score"], player2_score=inference["player2_score"], breaks=breaks
         )
@@ -175,11 +175,20 @@ async def get_match_by_id(match_id: str) -> SnookerMatch:
         raise MatchNotFound()
 
 
+# TODO: GET /matches
+# TODO: Refactor /fixtures to /matches?unplayed=true&round=x&group=y
 @v1_api.get("/matches/{match_id}", response_model=SnookerMatch)
 async def get_match(match_id: str):
     """Returns a specific match by ID."""
     match = await get_match_by_id(match_id)
     return JSONResponse(content=match.model_dump(by_alias=True))
+
+
+@v1_api.put("/fixtures")
+async def reset_fixtures():
+    """Resets the fixtures for the current round."""
+    SHEET.reset_fixtures()
+    return JSONResponse(content={"message": "Fixtures reset"})
 
 
 # Include the routers in the FastAPI app

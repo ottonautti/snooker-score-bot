@@ -2,9 +2,9 @@
 
 import os
 from datetime import datetime
+from functools import cached_property
 from itertools import combinations
 from typing import List, Tuple
-from functools import cached_property
 
 import google.auth
 import gspread
@@ -96,8 +96,8 @@ class SnookerSheet:
         This is necessary for data entry to work."""
         ws.unhide_columns(0, 20)
 
-    def clear_results(self, force=False):
-        """Clear all results from the spreadsheet, preserving headers.
+    def delete_matches(self, force=False):
+        """Delete everything from _matches, apart from headers.
 
         Att.! This should only ever be used for testing purposes."""
 
@@ -157,8 +157,8 @@ class SnookerSheet:
                 )
             else:
                 outcome = None
-            match = SnookerMatch.create_without_validating(
-                match_id=fixture.get("id"),
+            match = SnookerMatch(
+                _existing_match_id=fixture.get("id"),
                 round=fixture.get("round"),
                 group=fixture.get("group"),
                 player1=SnookerPlayer(name=fixture.get("player1"), group=fixture.get("group")),
@@ -187,7 +187,7 @@ class SnookerSheet:
         for group in sorted(groups):
             group_players = [p for p in players if p.group == group]
             for p1, p2 in combinations(group_players, 2):
-                fixture = MatchFixture.create(
+                fixture = MatchFixture(
                     round=round,
                     group=group,
                     player1=SnookerPlayer(name=p1.name, group=group),
@@ -214,9 +214,11 @@ class SnookerSheet:
         values = list(fixture_row(f) for f in fixtures)
         self.matches_sheet.append_rows(values)
 
-    def reset_fixtures(self, round: int):
+    def reset_fixtures(self, round: int = None):
         """Clear all fixtures for the current round."""
-        self.clear_results(force=True)
+        if not round:
+            round = self.current_round
+        self.delete_matches(force=True)
         self.make_fixtures(round)
 
     def _get_match_data_by_id(self, match_id: str) -> Tuple[dict, int]:

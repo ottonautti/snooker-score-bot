@@ -1,14 +1,19 @@
 import datetime
-import random
 import string
+import uuid
 from enum import Enum
 from typing import Any, Optional, Union
 
 from jinja2 import Template
-from pydantic import BaseModel, computed_field, model_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    computed_field,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
+from pydantic.fields import Field, PrivateAttr
 from pydantic_core import PydanticCustomError
-
-from pydantic.fields import Field
 
 
 class MatchFixtureMismatchError(ValueError):
@@ -76,19 +81,37 @@ class MatchFormats(Enum):
 class MatchFixture(BaseModel):
     """Match fixture i.e. an unplayed match between two players of a group"""
 
-    match_id: str = Field(min_length=5, max_length=5, serialization_alias="id")
+    match_id: uuid.UUID = Field(default_factory=uuid.uuid4, serialization_alias="id", frozen=True)
+    _existing_match_id: Optional[str] = PrivateAttr(default=None)
     round: Optional[int] = Field(alias="round", default=None)
     group: str
-    player1: Union[SnookerPlayer, str]
-    player2: Union[SnookerPlayer, str]
+    player1: SnookerPlayer
+    player2: SnookerPlayer
     format: MatchFormat = Field(default_factory=lambda: MatchFormats.BEST_OF_THREE.value)
+
+    @model_validator(mode="before")
+    def always_default_id(self):
+        """Disallow setting the match ID directly."""
+        if self.get("match_id"):
+            raise PydanticCustomError("match_id_error", "Match ID can not be set")
+        if ex_id := self.get("_existing_match_id"):
+            self["match_id"] = ex_id
+        return self
 
     @model_validator(mode="before")
     def convert_players(self):
         """Convert player names to player objects."""
         if isinstance(self["player1"], str):
             self["player1"] = SnookerPlayer(name=self["player1"], group=self["group"])
+        if isinstance(self["player2"], str):
             self["player2"] = SnookerPlayer(name=self["player2"], group=self["group"])
+        return self
+
+    @model_validator(mode="after")
+    def groups_agree(self):
+        """Players must belong in the same group."""
+        if not (self.group == self.player1.group == self.player2.group):
+            raise PydanticCustomError("group_mismatch", "Mismatch in group")
         return self
 
     @computed_field
@@ -97,25 +120,15 @@ class MatchFixture(BaseModel):
             return self.state == "completed"
         return False
 
-    def csv(self, headers=False, **kwargs) -> dict:
-        """Returns the model as a dictionary with JSON-compatible keys."""
-        include = kwargs.get("include", None)
-        str_ = ""
-        hdrs, values = zip(*self.model_dump(include=include, by_alias=True).items())
-        if headers:
-            str_ += ",".join(hdrs) + "\n"
-        str_ += ",".join([str(v) for v in values])
-        return str_
-
     @classmethod
-    def create(cls, **kwargs) -> "MatchFixture":
-        """Create a MatchFixture for the first time."""
-        # provision a match_id
-        if "match_id" in kwargs:
-            raise ValueError("match_id should not be provided for new match fixtures")
-        match_id = "".join(random.choices(string.ascii_lowercase + string.digits, k=5))
-        kwargs["match_id"] = str(match_id)
-        return cls(**kwargs)
+    def from_player_names(cls, player1: str, player2: str, group: str, **kwargs) -> "MatchFixture":
+        """Create a match fixture from player names."""
+        return cls(
+            player1=SnookerPlayer(name=player1, group=group),
+            player2=SnookerPlayer(name=player2, group=group),
+            group=group,
+            **kwargs,
+        )
 
 
 class MatchOutcome(BaseModel):
@@ -185,8 +198,6 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
         """
         if self.player1 == self.player2:
             raise PydanticCustomError("match_players_error", "Players can not be the same")
-        if self.group != self.player1.group != self.player2.group:
-            raise PydanticCustomError("match_players_error", "Players do not belong in the same group")
 
         if self.outcome:
             winning_score = max(self.outcome.player1_score, self.outcome.player2_score)
@@ -227,11 +238,6 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
         if self.player1 != fixture.player1 or self.player2 != fixture.player2:
             raise MatchFixtureMismatchError("Players do not match those in fixture")
         return self
-
-    @classmethod
-    def create_without_validating(cls, **kwargs) -> "SnookerMatch":
-        """Create a match without performing validations."""
-        return cls.model_construct(**kwargs)
 
     def summary(self, lang="eng") -> str:
         """Returns a string representation of the match."""
