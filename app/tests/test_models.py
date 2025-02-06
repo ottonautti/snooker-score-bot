@@ -1,7 +1,6 @@
 import datetime
-import string
 from itertools import permutations
-
+import uuid
 import pytest
 from pydantic import ValidationError
 
@@ -13,6 +12,7 @@ from app.models import (
     SnookerBreak,
     SnookerMatch,
     SnookerPlayer,
+    InferredMatch
 )
 
 
@@ -37,11 +37,11 @@ def mock_fixtures(mock_players):
         if player1.group == player2.group:
             # 5 lower case ascii characters
             fixtures.append(
-                MatchFixture(
+                MatchFixture.create(
                     round=1,
                     group=player1.group,
-                    player1=SnookerPlayer(name=player1.name, group=player1.group),
-                    player2=SnookerPlayer(name=player2.name, group=player2.group),
+                    player1=player1.name,
+                    player2=player2.name,
                     format=MatchFormats.BEST_OF_THREE.value,
                 )
             )
@@ -69,59 +69,65 @@ def test_match_format():
     assert format.num_reds == 15
 
 
-def test_match_fixture(mock_players):
-    fixture = MatchFixture(
-        round=1,
+def test_create_match_fixture():
+    match = MatchFixture.create(
+        player1="Player One",
+        player2="Player Two",
         group="L1",
-        player1=SnookerPlayer(name="Doe John", group="L1"),
-        player2=SnookerPlayer(name="Doe Jane", group="L1"),
     )
-    md = fixture.model_dump()
-    assert md["round"] == 1
-    assert md["group"] == "L1"
-    assert md["player1"] == "Doe John"
-    assert md["player2"] == "Doe Jane"
+    assert match.player1.name == "Player One"
+    assert match.player2.name == "Player Two"
+    assert match.group == "L1"
+    assert match.format == MatchFormats.BEST_OF_THREE.value
 
-    # match_id can't be mutated
-    with pytest.raises(ValidationError):
-        fixture.match_id = "foobar"
 
-    # match_id can't be set manually
-    with pytest.raises(ValidationError):
-        fixture_with_manual_id = MatchFixture(
-            match_id="foobar",
-            round=1,
+def test_deserialize_match_fixture():
+    existing_match_id = "123e4567-e89b-12d3-a456-426614174000"
+    match = MatchFixture.from_storage(
+        match_id=existing_match_id,
+        player1=SnookerPlayer(name="Player One", group="L1"),
+        player2=SnookerPlayer(name="Player Two", group="L1"),
+        group="L1",
+        format=MatchFormat(best_of=5, num_reds=15),
+    )
+    assert match.match_id == existing_match_id
+    assert match.player1.name == "Player One"
+    assert match.player2.name == "Player Two"
+    assert match.group == "L1"
+    assert match.format.best_of == 5
+
+
+def test_setting_match_id_raises():
+    match = MatchFixture.create(player1="Player One", player2="Player Two", group="L1")
+    with pytest.raises(AttributeError):
+        match.match_id = uuid.uuid4()
+
+
+def test_deserialize_match_fixture_invalid_players_raises():
+    with pytest.raises(ValueError):
+        MatchFixture.from_storage(
+            match_id="123e4567-e89b-12d3-a456-426614174000",
+            player1=SnookerPlayer(name="Player One", group="L1"),
+            player2=SnookerPlayer(name="Player Two", group="L2"),
             group="L1",
-            player1=SnookerPlayer(name="Doe John", group="L1"),
-            player2=SnookerPlayer(name="Doe Jane", group="L1"),
+            format=MatchFormat(best_of=5, num_reds=15),
         )
-
-    # ... except when done via `_existing_match_id`
-    existing_fixture = MatchFixture(
-        _existing_match_id="foobar",
-        round=1,
-        group="L1",
-        player1=SnookerPlayer(name="Doe John", group="L1"),
-        player2=SnookerPlayer(name="Doe Jane", group="L1"),
-    )
-    assert existing_fixture.match_id == "foobar"
 
 
 def test_snooker_match(mock_fixtures):
     fixture: MatchFixture = mock_fixtures[0]
     assert fixture.completed is False
     outcome = MatchOutcome(player1_score=2, player2_score=1, date=datetime.date(2025, 1, 1))
-    match = SnookerMatch(
-        _existing_match_id=fixture.match_id,
-        player1=fixture.player1.name,
-        player2=fixture.player2.name,
+    match = SnookerMatch.from_storage(
+        match_id=fixture.match_id,
+        player1=fixture.player1,
+        player2=fixture.player2,
         group=fixture.group,
         round=fixture.round,
         format=MatchFormats.BEST_OF_THREE.value,
         outcome=outcome,
     )
     md = match.model_dump()
-    assert match.validate_against_fixture(fixture)
     assert md["completed"] is True
     assert md["player1"] == "Doe John"
     assert md["player2"] == "Doe Jane"
@@ -153,3 +159,19 @@ def test_snooker_match_invalid_scorelines():
         match.outcome = MatchOutcome(player1_score=3, player2_score=2)
     with pytest.raises(ValidationError):
         match.outcome = MatchOutcome(player1_score=2, player2_score=-1)
+
+
+def test_snooker_match_break_by_non_match_player():
+    match = SnookerMatch(
+        player1="Doe John",
+        player2="Doe Jane",
+        group="L1",
+        round=1,
+        format=MatchFormat(best_of=3, num_reds=15),
+    )
+    with pytest.raises(ValidationError):
+        match.outcome = MatchOutcome(
+            player1_score=2,
+            player2_score=1,
+            breaks=[SnookerBreak(player=SnookerPlayer(name="Beam Jim", group="L1"), points=100)],
+        )

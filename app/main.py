@@ -9,22 +9,24 @@ import google.cloud.logging
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import ORJSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
 from .errors import (
     InvalidContentType,
     InvalidMatchError,
     MatchAlreadyCompleted,
+    MatchFixtureMismatchError,
     MatchNotFound,
 )
 from .llm.inference import SnookerScoresLLM
 from .models import (
-    MatchFixture,
+    InferredMatch,
     MatchOutcome,
     SnookerBreak,
     SnookerMatch,
     SnookerMatchList,
+    SnookerPlayer,
 )
 from .settings import get_messages, get_settings
 from .sheets import SnookerSheet
@@ -46,7 +48,11 @@ def setup_logging():
         logging.getLogger().setLevel(logging.INFO)
 
 
-app = FastAPI()
+app = FastAPI(
+    version="1.0.0",
+    title="Snooker Scores API",
+    description="API for recording Groove Snooker League match outcomes",
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -83,39 +89,44 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
 
 
-def ok_created(**kwargs):
+def ok_created(content) -> ORJSONResponse:
     """Returns a successful response"""
-    return JSONResponse(jsonable_encoder(kwargs), status.HTTP_201_CREATED)
+    return ORJSONResponse(jsonable_encoder(content), status_code=status.HTTP_201_CREATED)
 
 
 @twilio_router.post("/scores", include_in_schema=False)
 async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     """Handles inbound scores via SMS"""
     logging.info("Received SMS from %s: %s", msg.sender, msg.body)
-    inference: dict = LLM.infer(passage=msg.body, known_players=SHEET.current_players)
-    target_fixture = SHEET.lookup_match_by_player_names((inference["player1"], inference["player2"]))
-    if not target_fixture:
+    inferred: InferredMatch = LLM.infer(passage=msg.body, known_players=SHEET.current_players)
+    fixture: SnookerMatch = SHEET.lookup_match_by_player_names((inferred.player1, inferred.player2))
+    if not fixture:
         raise MatchNotFound()
-    if target_fixture.completed:
+    if fixture.completed:
         raise MatchAlreadyCompleted()
-    match_data = target_fixture.model_dump()
-    reply: str = ""
-    breaks = [SnookerBreak.from_dict(b) for b in inference.get("breaks", [])]
+    if inferred.player2 == fixture.player1.name and inferred.player1 == fixture.player2.name:
+        inferred.player1, inferred.player2 = inferred.player2, inferred.player1
+        inferred.player1_score, inferred.player2_score = (inferred.player2_score, inferred.player1_score)
+    # if players still not matching, raise
+    if inferred.player1 != fixture.player1.name or inferred.player2 != fixture.player2.name:
+        raise MatchFixtureMismatchError("Players do not match those in fixture")
     try:
-        match = SnookerMatch(**match_data).validate_against_fixture(target_fixture)
-        match.outcome = MatchOutcome(
-            player1_score=inference["player1_score"], player2_score=inference["player2_score"], breaks=breaks
+        reply: str = ""
+        breaks = [SnookerBreak.from_dict(b) for b in inferred.breaks]
+        outcome = MatchOutcome(
+            player1_score=inferred.player1_score, player2_score=inferred.player2_score, breaks=breaks
         )
-        reply = match.summary("eng")
+        match: SnookerMatch = fixture.model_copy(update={"outcome": outcome})
+        reply = match.summary(link=SETTINGS.SHEET_SHORTLINK)
     except ValidationError as err:
-        reply = get_messages("eng").INVALID
+        reply = get_messages().INVALID
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
         raise InvalidMatchError(error_messages)
     finally:
         TWILIO.send_message(msg.sender, reply)
 
-    SHEET.record_match(match)
-    return ok_created(message=reply, match=match.model_dump())
+    SHEET.record_match(match, log=msg.body)
+    return ok_created(dict(message=reply, match=match.model_dump()))
 
 
 class BreakRequest(BaseModel):
@@ -124,7 +135,7 @@ class BreakRequest(BaseModel):
 
 
 class ScoreRequest(BaseModel):
-    breaks: list[BreakRequest]
+    breaks: Optional[list[BreakRequest]]
     player1_score: int
     player2_score: int
 
@@ -140,9 +151,13 @@ async def post_scores(body: ScoreRequest, match_id: str):
     for brk in body.breaks:
         break_by: Literal["player1", "player2"] = brk.player
         breaks.append(SnookerBreak(player=getattr(match, break_by), points=brk.points))
-    match.outcome = MatchOutcome(player1_score=body.player1_score, player2_score=body.player2_score, breaks=breaks)
+    match.outcome = MatchOutcome(
+        player1_score=body.player1_score,
+        player2_score=body.player2_score,
+        breaks=breaks,
+    )
     SHEET.record_match(match)
-    return ok_created(match=match.model_dump())
+    return ok_created(match.model_dump())
 
 
 @app.exception_handler(ValidationError)
@@ -155,16 +170,22 @@ async def handle_validation_error(req: Request, exc: ValidationError):
 async def handle_exception(req: Request, exc: Exception):
     logging.exception(exc)
     if isinstance(exc, HTTPException):
-        return JSONResponse({"detail": exc.detail}, exc.status_code)
+        return ORJSONResponse({"detail": exc.detail}, exc.status_code)
     else:
-        return JSONResponse({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return ORJSONResponse({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@v1_api.get("/fixtures", response_model=SnookerMatchList)
-async def get_fixtures():
-    """Returns scheduled matches for the current round."""
-    fixtures_list = SnookerMatchList(round=SHEET.current_round, matches=SHEET.get_fixtures())
-    return JSONResponse(content=fixtures_list.model_dump(by_alias=True))
+@v1_api.get("/matches", response_model=SnookerMatchList)
+async def get_matches(
+    unplayed: bool = False,
+    completed: bool = False,
+    round: int = None,
+    group: str = None,
+):
+    """Returns matches, optionally filtered by query parameters."""
+    matches = SHEET.get_matches(round=round, group=group, unplayed_only=unplayed, completed_only=completed)
+    matches_list = SnookerMatchList(round=SHEET.current_round, matches=matches)
+    return ORJSONResponse(content=matches_list.model_dump(by_alias=True))
 
 
 async def get_match_by_id(match_id: str) -> SnookerMatch:
@@ -175,20 +196,26 @@ async def get_match_by_id(match_id: str) -> SnookerMatch:
         raise MatchNotFound()
 
 
-# TODO: GET /matches
-# TODO: Refactor /fixtures to /matches?unplayed=true&round=x&group=y
 @v1_api.get("/matches/{match_id}", response_model=SnookerMatch)
 async def get_match(match_id: str):
     """Returns a specific match by ID."""
     match = await get_match_by_id(match_id)
-    return JSONResponse(content=match.model_dump(by_alias=True))
+    return ORJSONResponse(content=match.model_dump(by_alias=True))
 
 
-@v1_api.put("/fixtures")
+@v1_api.get("/fixtures", deprecated=True, response_model=SnookerMatchList)
+async def get_fixtures():
+    """Returns unplayed matches. The same as calling /matches with unplayed=True"""
+    fixtures = SHEET.get_fixtures()
+    fixtures_list = SnookerMatchList(round=SHEET.current_round, matches=fixtures)
+    return ORJSONResponse(content=fixtures_list.model_dump(by_alias=True))
+
+
+@v1_api.put("/fixtures", include_in_schema=False)
 async def reset_fixtures():
     """Resets the fixtures for the current round."""
     SHEET.reset_fixtures()
-    return JSONResponse(content={"message": "Fixtures reset"})
+    return ORJSONResponse(content={"message": "Fixtures reset"})
 
 
 # Include the routers in the FastAPI app

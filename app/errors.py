@@ -28,3 +28,7 @@ class InvalidMatchError(HTTPException):
     def __init__(self, detail=None):
         self.detail = detail or "Invalid match"
         super().__init__(status_code=self.status_code, detail=self.detail)
+
+
+class MatchFixtureMismatchError(ValueError):
+    pass

@@ -12,7 +12,7 @@ class FinMessages:
     INVALID = "En ymmärtänyt viestiä, pahoittelut."
 
 
-def get_messages(lang: str) -> Union[FinMessages, EngMessages]:
+def get_messages(lang: str = "eng") -> Union[FinMessages, EngMessages]:
     return {
         "eng": EngMessages,
         "fin": FinMessages,
@@ -27,6 +27,7 @@ class Settings:
     LLM = "vertexai"
     SHEET_SHORTLINK = "https://tinyurl.com/groovesnk"  # shortened URL to the Google Sheet
     API_SECRET = os.getenv("SNOOKER_API_SECRET")
+
 
 class HouseLeagueSettings(Settings):
     MAX_SCORE = 2  # Matches are best of 3

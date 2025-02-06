@@ -47,7 +47,6 @@ class MockFewShotData(FewShotData):
                                 "points": 45,
                             }
                         ],
-                        "language": "fin"
                     }
                 ),
             },
@@ -63,7 +62,6 @@ class MockFewShotData(FewShotData):
                         "player2_score": 0,
                         "winner": "Laaksonen Sinikka",
                         "breaks": [],
-                        "language": "fin"
                     }
                 ),
             },
@@ -92,7 +90,6 @@ class MockFewShotData(FewShotData):
                                 "points": 52,
                             },
                         ],
-                        "language": "eng"
                     }
                 ),
             },
@@ -117,7 +114,6 @@ class MockFewShotData(FewShotData):
                                 "points": 18,
                             },
                         ],
-                        "language": "fin"
                     }
                 ),
             },
@@ -133,7 +129,6 @@ class MockFewShotData(FewShotData):
                         "player2_score": 1,
                         "winner": "Tähtinen Anneli",
                         "breaks": [],
-                        "language": "fin"
                     }
                 ),
             },

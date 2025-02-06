@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from pytest import raises
 
+from app.models import InferredMatch
 from app.errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
 from app.main import SETTINGS, app
 from app.sheets import SnookerSheet
@@ -51,13 +51,15 @@ class TestSmsRoutes:
 
     def test_sms_score_valid_inference(self, test_client, monkeypatch, prepared_sheet):
         """Test for valid inference by LLM"""
-        mock_llm_response = {
-            "player1": "Virtanen Aatos",
-            "player2": "Mäkinen Joonas",
-            "player1_score": 2,
-            "player2_score": 1,
-        }
-        with patch("app.llm.inference.SnookerScoresLLM.infer", return_value=mock_llm_response) as mock_llm:
+        mock_inference = InferredMatch(
+            player1="Virtanen Aatos",
+            player2="Mäkinen Joonas",
+            player1_score=2,
+            player2_score=1,
+            winner="Virtanen Aatos",
+            group="L1",
+        )
+        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post("/sms/scores", data=self.TEST_SMS)
             assert response.status_code == 201
             assert "message" in response.json()
@@ -71,13 +73,15 @@ class TestSmsRoutes:
 
     def test_sms_score_valid_inference_reversed_player_order(self, prepared_sheet, test_client):
         """Test for when the player order is reversed in the LLM inference"""
-        with patch("app.main.SnookerScoresLLM.infer") as mock_llm:
-            mock_llm.return_value = {
-                "player1": "Mäkinen Joonas",
-                "player2": "Virtanen Aatos",
-                "player1_score": 1,
-                "player2_score": 2,
-            }
+        mock_inference = InferredMatch(
+            player1="Mäkinen Joonas",
+            player2="Virtanen Aatos",
+            player1_score=1,
+            player2_score=2,
+            winner="Virtanen Aatos",
+            group="L1",
+        )
+        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post(
                 "/sms/scores",
                 data=self.TEST_SMS,
@@ -85,13 +89,15 @@ class TestSmsRoutes:
 
     def test_sms_score_llm_infers_nonexisting_match(self, prepared_sheet, test_client):
         """InvalidMatchError should be raised as players are from different groups"""
-        with patch("app.main.SnookerScoresLLM.infer") as mock_llm:
-            mock_llm.return_value = {
-                "player1": "Virtanen Aatos",
-                "player2": "Rantanen Lauri",
-                "player1_score": 2,
-                "player2_score": 1,
-            }
+        mock_inference = InferredMatch(
+            player1="Virtanen Aatos",
+            player2="Rantanen Lauri",
+            player1_score=2,
+            player2_score=1,
+            winner="Virtanen Aatos",
+            group="L1",
+        )
+        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post(
                 "/sms/scores",
                 data=self.TEST_SMS,
@@ -102,13 +108,15 @@ class TestSmsRoutes:
 
     def test_sms_score_llm_hallucinates_players(self, prepared_sheet, test_client):
         """MatchNotFound should be raised as players are not found in the fixtures"""
-        with patch("app.main.SnookerScoresLLM.infer") as mock_llm:
-            mock_llm.return_value = {
-                "player1": "Biden Joe",
-                "player2": "Trump Donald",
-                "player1_score": 2,
-                "player2_score": 1,
-            }
+        mock_inference = InferredMatch(
+            player1="Biden Joe",
+            player2="Trump Donald",
+            player1_score=2,
+            player2_score=1,
+            winner="Biden Joe",
+            group="L1",
+        )
+        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post("/sms/scores", data=self.TEST_SMS)
             assert response.status_code == MatchNotFound.status_code
             detail = response.json().get("detail")
@@ -127,8 +135,8 @@ class TestApiRoutes:
     fixtures = None
 
     @classmethod
-    def test_get_fixtures(cls, prepared_sheet, test_client):
-        response = test_client.get(f"{cls.path}/fixtures")
+    def test_get_matches_unplayed(cls, prepared_sheet, test_client):
+        response = test_client.get(f"{cls.path}/matches?unplayed=true")
         assert response.status_code == 200
         data = response.json()
         assert "round" in data
@@ -136,20 +144,34 @@ class TestApiRoutes:
         # let's cache the fixtures for later tests, fetching them is expensive
         cls.fixtures = data["matches"]
 
-    def test_post_scores(self, prepared_sheet, test_client):
+    def test_get_unplayed_match(self, prepared_sheet, test_client):
+        """Test for getting a single match, before it's outcome has been recorded."""
+        if self.fixtures is None:
+            self.test_get_matches_unplayed(prepared_sheet, test_client)
+        fixture = self.fixtures[0]
+        match_id = fixture["id"]
+        response = test_client.get(f"{self.path}/matches/{match_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["state"] == "unplayed"
+        assert data["completed"] is False
+        assert fixture["player1"] == data["player1"]
+        assert fixture["player2"] == data["player2"]
+        assert data["winner"] is None
+
+    def test_post_scores_and_get(self, prepared_sheet, test_client):
         """Test for posting scores to a match"""
         if self.fixtures is None:
-            self.test_get_fixtures(prepared_sheet, test_client)
-        target_fixture = self.fixtures[0]
-        match_id = target_fixture["id"]
+            self.test_get_matches_unplayed(prepared_sheet, test_client)
+        fixture = self.fixtures[0]
+        match_id = fixture["id"]
         response = test_client.post(
             f"{self.path}/scores/{match_id}", json={"player1_score": 2, "player2_score": 1, "breaks": []}
         )
-        data = response.json()
+        post_response = response.json()
         assert response.status_code == 201
-        assert "match" in data
-        assert target_fixture["player1"] == data["match"]["player1"]
-        assert target_fixture["player2"] == data["match"]["player2"]
+        assert fixture["player1"] == post_response["player1"]
+        assert fixture["player2"] == post_response["player2"]
 
         # attempting to post score for the same match a second time should raise a 409 Conflict
         response = test_client.post(
@@ -159,10 +181,22 @@ class TestApiRoutes:
         assert "detail" in response.json()
         assert response.json()["detail"] == "Match already completed"
 
+        # get the match again to check that the outcome was
+        response = test_client.get(f"{self.path}/matches/{match_id}")
+        assert response.status_code == 200
+        get_response = response.json()
+
+        # apart from outcome.breaks and outcome.date, the responses should be identical
+        post_outcome = post_response.pop("outcome")
+        get_outcome = get_response.pop("outcome")
+        assert post_response == get_response
+        assert post_outcome["player1_score"] == get_outcome["player1_score"]
+        assert post_outcome["player2_score"] == get_outcome["player2_score"]
+
     def test_post_scores_with_valid_breaks(self, prepared_sheet, test_client):
         """Test for posting scores to a match with breaks"""
         if self.fixtures is None:
-            self.test_get_fixtures(prepared_sheet, test_client)
+            self.test_get_matches_unplayed(prepared_sheet, test_client)
         target_fixture = self.fixtures[1]
         match_id = target_fixture["id"]
         response = test_client.post(
@@ -178,16 +212,15 @@ class TestApiRoutes:
         )
         data = response.json()
         assert response.status_code == 201
-        assert "match" in data
-        assert target_fixture["player1"] == data["match"]["player1"]
-        assert target_fixture["player2"] == data["match"]["player2"]
-        assert data["match"]["highest_break"] == 50
-        assert data["match"]["highest_break_player"] == target_fixture["player1"]
+        assert target_fixture["player1"] == data["player1"]
+        assert target_fixture["player2"] == data["player2"]
+        assert data["highest_break"] == 50
+        assert data["highest_break_player"] == target_fixture["player1"]
 
-    def test_post_scores_with_invalid_breaks(self, prepared_sheet, test_client):
+    def test_post_scores_with_invalid_breaks_raises(self, prepared_sheet, test_client):
         """Test for posting scores to a match with invalid breaks"""
         if self.fixtures is None:
-            self.test_get_fixtures(prepared_sheet, test_client)
+            self.test_get_matches_unplayed(prepared_sheet, test_client)
         target_fixture = self.fixtures[2]
         match_id = target_fixture["id"]
 

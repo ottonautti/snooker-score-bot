@@ -141,12 +141,18 @@ class SnookerSheet:
 
         return True
 
-    def get_matches(self, round: int = None, unplayed_only=False, completed_only=False) -> List[SnookerMatch]:
+    def get_matches(
+        self, round: int = None, group: str = None, unplayed_only=False, completed_only=False
+    ) -> List[SnookerMatch]:
         if not round:
             round = self.current_round
-        fixtures_data = self.matches_sheet.get_all_records(default_blank=None)
+        rows = self.matches_sheet.get_all_records(default_blank=None)
+        if round:
+            rows = [f for f in rows if f["round"] == round]
+        if group:
+            rows = [f for f in rows if f["group"] == group]
         matches = []
-        for fixture in filter(lambda x: x["round"] == round, fixtures_data):
+        for fixture in rows:
             outcome = None
             if fixture.get("winner"):
                 outcome = MatchOutcome(
@@ -157,8 +163,8 @@ class SnookerSheet:
                 )
             else:
                 outcome = None
-            match = SnookerMatch(
-                _existing_match_id=fixture.get("id"),
+            match = SnookerMatch.from_storage(
+                match_id=fixture.get("id"),
                 round=fixture.get("round"),
                 group=fixture.get("group"),
                 player1=SnookerPlayer(name=fixture.get("player1"), group=fixture.get("group")),
@@ -167,9 +173,9 @@ class SnookerSheet:
             )
             matches.append(match)
         if unplayed_only:
-            matches = [m for m in matches if not m.completed]
-        if completed_only:
-            matches = [m for m in matches if m.completed]
+            return [m for m in matches if not m.completed]
+        elif completed_only:
+            return [m for m in matches if m.completed]
 
         return matches
 
@@ -235,8 +241,8 @@ class SnookerSheet:
 
     def get_match_by_id(self, match_id: str) -> SnookerMatch:
         data, _ = self._get_match_data_by_id(match_id)
-        match = SnookerMatch(
-            match_id=data.pop("id"),
+        match = SnookerMatch.from_storage(
+            match_id=match_id,
             date=try_parse_date(data.pop("date", None)),
             player1=SnookerPlayer(name=data.pop("player1"), group=data.get("group")),
             player2=SnookerPlayer(name=data.pop("player2"), group=data.get("group")),
@@ -261,7 +267,7 @@ class SnookerSheet:
             col = self.matches_sheet.find(field, in_row=1).col
             self.matches_sheet.update_cell(nth_row, col, value)
 
-    def record_match(self, match: SnookerMatch):
+    def record_match(self, match: SnookerMatch, log: str = None):
         """Persist the pre-validated match outcome to the spreadsheet.
 
         Assert that the fixture has not been recorded before. (no winner)
@@ -284,6 +290,7 @@ class SnookerSheet:
             "player1_score": match.outcome.player1_score,
             "player2_score": match.outcome.player2_score,
             "winner": match.winner.name,
+            "log": log or "",
         }
         self.update_match_by_id(m_id, updates)
 

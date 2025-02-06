@@ -7,8 +7,8 @@ import os
 from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains.llm import LLMChain
 from langchain_google_vertexai import VertexAI
-
-from app.models import SnookerPlayer
+from pydantic import BaseModel
+from app.models import SnookerPlayer, InferredMatch
 
 from . import prompts
 
@@ -32,7 +32,7 @@ class SnookerScoresLLM:
             prompt = prompts.get_prompt()
         self.prompt = prompt
 
-    def infer(self, passage: str, known_players: list[SnookerPlayer]):
+    def infer(self, passage: str, known_players: list[SnookerPlayer]) -> InferredMatch:
         """Infer snooker scores from a passage of text and a list of known players."""
         logging.info(f"Calling LLM with passage: {passage}")
         known_players_txt = "\n".join([plr.__llm_str__() for plr in known_players])
@@ -45,7 +45,7 @@ class SnookerScoresLLM:
         )
         try:
             logging.info(f"{self.llm.__class__.__name__} output: {output['text']}")
-            deserialized = json.loads(output["text"])
+            match = InferredMatch(**json.loads(output["text"]))
         except KeyError as e:
             raise RuntimeError(f"Unexpected output from LLM: {output}") from e
-        return deserialized
+        return match

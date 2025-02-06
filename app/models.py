@@ -1,5 +1,4 @@
 import datetime
-import string
 import uuid
 from enum import Enum
 from typing import Any, Optional, Union
@@ -14,10 +13,6 @@ from pydantic import (
 )
 from pydantic.fields import Field, PrivateAttr
 from pydantic_core import PydanticCustomError
-
-
-class MatchFixtureMismatchError(ValueError):
-    pass
 
 
 class SnookerPlayer(BaseModel):
@@ -78,25 +73,37 @@ class MatchFormats(Enum):
     BEST_OF_THREE = MatchFormat(best_of=3, num_reds=15)
 
 
+class MatchOutcome(BaseModel):
+    """Match outcome i.e. a completed match with scores and breaks"""
+
+    date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
+    player1_score: int = Field(default=None)
+    player2_score: int = Field(default=None)
+    breaks: list[SnookerBreak] = Field(default_factory=list)
+
+    @property
+    def scoreline(self) -> str:
+        return f"{self.player1_score}–{self.player2_score}"
+
+
 class MatchFixture(BaseModel):
     """Match fixture i.e. an unplayed match between two players of a group"""
 
-    match_id: uuid.UUID = Field(default_factory=uuid.uuid4, serialization_alias="id", frozen=True)
-    _existing_match_id: Optional[str] = PrivateAttr(default=None)
+    _match_id: uuid.UUID = PrivateAttr(default_factory=lambda: uuid.uuid4())
     round: Optional[int] = Field(alias="round", default=None)
     group: str
     player1: SnookerPlayer
     player2: SnookerPlayer
     format: MatchFormat = Field(default_factory=lambda: MatchFormats.BEST_OF_THREE.value)
 
-    @model_validator(mode="before")
-    def always_default_id(self):
-        """Disallow setting the match ID directly."""
-        if self.get("match_id"):
-            raise PydanticCustomError("match_id_error", "Match ID can not be set")
-        if ex_id := self.get("_existing_match_id"):
-            self["match_id"] = ex_id
-        return self
+    @property
+    def match_id(self) -> str:
+        return str(self._match_id)
+
+    @computed_field
+    def id(self) -> str:
+        """Included in API responses."""
+        return self.match_id
 
     @model_validator(mode="before")
     def convert_players(self):
@@ -121,33 +128,31 @@ class MatchFixture(BaseModel):
         return False
 
     @classmethod
-    def from_player_names(cls, player1: str, player2: str, group: str, **kwargs) -> "MatchFixture":
-        """Create a match fixture from player names."""
-        return cls(
+    def create(cls, player1: str, player2: str, group: str, **kwargs) -> "MatchFixture":
+        """Create a match fixture from player names, provisioning a match ID.
+
+        Validates the model before returning."""
+        instance = cls.model_construct(
             player1=SnookerPlayer(name=player1, group=group),
             player2=SnookerPlayer(name=player2, group=group),
             group=group,
             **kwargs,
         )
+        return cls.model_validate(instance)
 
+    @classmethod
+    def from_storage(cls, match_id: str, **data) -> Union["MatchFixture", "SnookerMatch"]:
+        """Create a match fixture from storage or inferred data, using existing match ID.
 
-class MatchOutcome(BaseModel):
-    """Match outcome i.e. a completed match with scores and breaks"""
+        Validates the model before returning."""
 
-    date: Optional[datetime.date] = Field(default_factory=datetime.date.today)
-    player1_score: int = Field(default=None)
-    player2_score: int = Field(default=None)
-    breaks: list[SnookerBreak] = Field(default_factory=list)
-
-    @property
-    def scoreline(self) -> str:
-        return f"{self.player1_score}–{self.player2_score}"
+        instance = cls.model_construct(_match_id=match_id, **data)
+        return cls.model_validate(instance)
 
 
 class SnookerMatch(MatchFixture, validate_assignment=True):
     """Complete snooker match with scores and breaks"""
 
-    _fixtures: list[MatchFixture] = []
     outcome: Optional[MatchOutcome] = None
 
     @computed_field
@@ -160,7 +165,9 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
         """Breaks have to be by one of the match players"""
         if self.outcome:
             for b in self.outcome.breaks:
-                assert b.player in (self.player1, self.player2), f"Break by {b.player} not in match"
+                assert b.player in (self.player1, self.player2), (
+                    f"Break by player not participating in match {b.player}"
+                )
         return self
 
     @computed_field
@@ -212,40 +219,40 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
                 )
         return self
 
-    def validate_against_fixture(self, fixture) -> "SnookerMatch":
-        """Asserts the following conditions:
-        * Match ID matches the fixture.
-        * Group matches the group in the fixture.
-        * Players match the players in the concerned fixture (by ID).
-            * If the inferred player1 is actually player2 and vice versa, reverse the players.
-        * Players can not be the same player.
+    # def validate_against_fixture(self, fixture) -> "SnookerMatch":
+    #     """Asserts the following conditions:
+    #     * Match ID matches the fixture.
+    #     * Group matches the group in the fixture.
+    #     * Players match the players in the concerned fixture (by ID).
+    #         * If the inferred player1 is actually player2 and vice versa, reverse the players.
+    #     * Players can not be the same player.
 
-        Returns the match if all conditions are met.
-        """
-        if self.match_id != fixture.match_id:
-            raise MatchFixtureMismatchError(f"Match ID {self.match_id} doesn't match fixture")
-        if self.group != fixture.group:
-            raise MatchFixtureMismatchError(f"Group mismatch: {self.group} != {fixture.group}")
-        # reverse the players if the inferred player1 is actually player2
-        # this can be the case depending on LLM's quirks
-        if self.player2 == fixture.player1 and self.player1 == fixture.player2:
-            self.player1, self.player2 = self.player2, self.player1
-            self.outcome.player1_score, self.outcome.player2_score = (
-                self.outcome.player2_score,
-                self.outcome.player1_score,
-            )
-        # if players still not matching, raise
-        if self.player1 != fixture.player1 or self.player2 != fixture.player2:
-            raise MatchFixtureMismatchError("Players do not match those in fixture")
-        return self
+    #     Returns the match if all conditions are met.
+    #     """
+    #     if self.match_id != fixture.match_id:
+    #         raise MatchFixtureMismatchError(f"Match ID {self.match_id} doesn't match fixture")
+    #     if self.group != fixture.group:
+    #         raise MatchFixtureMismatchError(f"Group mismatch: {self.group} != {fixture.group}")
+    #     # reverse the players if the inferred player1 is actually player2
+    #     # this can be the case depending on LLM's quirks
+    #     if self.player2 == fixture.player1 and self.player1 == fixture.player2:
+    #         self.player1, self.player2 = self.player2, self.player1
+    #         self.outcome.player1_score, self.outcome.player2_score = (
+    #             self.outcome.player2_score,
+    #             self.outcome.player1_score,
+    #         )
+    #     # if players still not matching, raise
+    #     if self.player1 != fixture.player1 or self.player2 != fixture.player2:
+    #         raise MatchFixtureMismatchError("Players do not match those in fixture")
+    #     return self
 
-    def summary(self, lang="eng") -> str:
+    def summary(self, lang="eng", link=None) -> str:
         """Returns a string representation of the match."""
 
         TEMPLATES = {
             "eng": Template(
                 """
-{{ self.winner }} won {{ loser }} by {{ winner_score }} frames to {{ loser_score }}.
+{{ winner }} won {{ loser }} by {{ winner_score }} frames to {{ loser_score }}.
 {%- if match.breaks -%}
     Breaks: {% for b in match.breaks -%} {{ b.player.given_name }} {{ b.points }} {%- if not
     loop.last %}, {% endif %}{%- endfor -%}.
@@ -256,25 +263,27 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
 
         summary = TEMPLATES[lang].render(
             match=self,
-            winner=self.winner,
-            loser=self.loser,
+            winner=self.winner.name,
+            loser=self.loser.name,
             winner_score=self.outcome.player1_score if self.winner == self.player1 else self.outcome.player2_score,
             loser_score=self.outcome.player2_score if self.winner == self.player1 else self.outcome.player1_score,
-        )
+        ).strip()
 
-        return f"{summary}"
+        if link:
+            summary += f"\n\nLeague standings: {link}"
+        return summary
 
 
 class SnookerMatchList(BaseModel):
     round: int
-    matches: list[Union[SnookerMatch, MatchFixture]] = Field(default_factory=list)
+    matches: list[SnookerMatch] = []
 
-    @computed_field(alias="matches")
-    def filter_completed(self) -> list[SnookerMatch]:
-        """Filter for completed matches."""
-        return [m for m in self.matches if m.completed]
 
-    @computed_field(alias="matches")
-    def filter_unplayed(self) -> list[SnookerMatch]:
-        """Filter for unplayed matches."""
-        return [m for m in self.matches if not m.completed]
+class InferredMatch(BaseModel):
+    group: str
+    player1: str
+    player2: str
+    player1_score: int
+    player2_score: int
+    winner: str
+    breaks: Optional[list[dict]] = Field(default_factory=list)
