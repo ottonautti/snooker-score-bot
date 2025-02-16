@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request,
 from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field, ValidationError
 
 from .errors import (
@@ -62,18 +63,28 @@ app.add_middleware(
 )
 
 
-def authorize(authorization: str = Header(None)):
+def authorize_v1(authorization: str = Header(None)):
     if authorization != SETTINGS.API_SECRET:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized")
+
+
+security = HTTPBasic()
+
+
+def basic_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    if credentials.password != SETTINGS.API_SECRET:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized")
 
 
 # Targeted by Twilio webhooks
 twilio_router = APIRouter(prefix="/sms")
 
-# Targeted by scorer app
-v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize)])
+# API Routers
+v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True)
+v2_api = APIRouter(prefix="/api/v2", dependencies=[Depends(basic_auth)])
 
 
+# Utility Functions
 async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     """Returns inbound Twilio message details from request form data"""
     # expect application/x-www-form-urlencoded
@@ -94,6 +105,27 @@ def ok_created(content) -> ORJSONResponse:
     return ORJSONResponse(jsonable_encoder(content), status_code=status.HTTP_201_CREATED)
 
 
+async def get_match_by_id(match_id: str) -> SnookerMatch:
+    """Returns a specific match by ID."""
+    try:
+        return SHEET.get_match_by_id(match_id)
+    except LookupError:
+        raise MatchNotFound()
+
+
+# Models
+class BreakRequest(BaseModel):
+    player: Literal["player1", "player2"]
+    points: int
+
+
+class ScoreRequest(BaseModel):
+    breaks: Optional[list[BreakRequest]]
+    player1_score: int
+    player2_score: int
+
+
+# Twilio SMS Endpoint
 @twilio_router.post("/scores", include_in_schema=False)
 async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     """Handles inbound scores via SMS"""
@@ -129,20 +161,10 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     return ok_created(dict(message=reply, match=match.model_dump()))
 
 
-class BreakRequest(BaseModel):
-    player: Literal["player1", "player2"]
-    points: int
-
-
-class ScoreRequest(BaseModel):
-    breaks: Optional[list[BreakRequest]]
-    player1_score: int
-    player2_score: int
-
-
-@v1_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
+# V2 API Endpoints
+@v2_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
 async def post_scores(body: ScoreRequest, match_id: str):
-    """Handles inbound scores via API"""
+    """Handles inbound scores via API with Basic Auth"""
     logging.info("Received API scores: %s", body)
     match: SnookerMatch = await get_match_by_id(match_id)
     if match.completed:
@@ -160,6 +182,61 @@ async def post_scores(body: ScoreRequest, match_id: str):
     return ok_created(match.model_dump())
 
 
+@v2_api.get("/matches", response_model=SnookerMatchList)
+async def get_matches(
+    unplayed: bool = False,
+    completed: bool = False,
+    round: int = None,
+    group: str = None,
+):
+    """Returns matches, optionally filtered by query parameters with Basic Auth."""
+    matches = SHEET.get_matches(round=round, group=group, unplayed_only=unplayed, completed_only=completed)
+    matches_list = SnookerMatchList(round=SHEET.current_round, matches=matches)
+    return ORJSONResponse(content=matches_list.model_dump(by_alias=True))
+
+
+@v2_api.get("/matches/{match_id}", response_model=SnookerMatch)
+async def get_match(match_id: str):
+    """Returns a specific match by ID with Basic Auth."""
+    match = await get_match_by_id(match_id)
+    return ORJSONResponse(content=match.model_dump(by_alias=True))
+
+
+# V1 API Endpoints (Legacy)
+@v1_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
+async def post_scores_v1(body: ScoreRequest, match_id: str):
+    """Handles inbound scores via API (legacy)"""
+    return await post_scores(body, match_id)
+
+
+@v1_api.get("/matches", response_model=SnookerMatchList)
+async def get_matches_v1(
+    unplayed: bool = False,
+    completed: bool = False,
+    round: int = None,
+    group: str = None,
+):
+    """Returns matches, optionally filtered by query parameters (legacy)."""
+    return await get_matches(unplayed, completed, round, group)
+
+
+@v1_api.get("/matches/{match_id}", response_model=SnookerMatch)
+async def get_match_v1(match_id: str):
+    """Returns a specific match by ID (legacy)."""
+    return await get_match(match_id)
+
+
+@v1_api.get("/fixtures", deprecated=True, response_model=SnookerMatchList)
+async def get_fixtures():
+    """Returns unplayed matches.
+
+    Deprecated, replace by calling /matches with unplayed=True"""
+    fixtures = SHEET.get_fixtures()
+    fixtures_list = SnookerMatchList(round=SHEET.current_round, matches=fixtures)
+    return ORJSONResponse(content=fixtures_list.model_dump(by_alias=True))
+
+
+# Exception Handlers
 @app.exception_handler(ValidationError)
 async def handle_validation_error(req: Request, exc: ValidationError):
     error_messages: list[str] = [err.get("msg") for err in exc.errors()]
@@ -175,51 +252,9 @@ async def handle_exception(req: Request, exc: Exception):
         return ORJSONResponse({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@v1_api.get("/matches", response_model=SnookerMatchList)
-async def get_matches(
-    unplayed: bool = False,
-    completed: bool = False,
-    round: int = None,
-    group: str = None,
-):
-    """Returns matches, optionally filtered by query parameters."""
-    matches = SHEET.get_matches(round=round, group=group, unplayed_only=unplayed, completed_only=completed)
-    matches_list = SnookerMatchList(round=SHEET.current_round, matches=matches)
-    return ORJSONResponse(content=matches_list.model_dump(by_alias=True))
-
-
-async def get_match_by_id(match_id: str) -> SnookerMatch:
-    """Returns a specific match by ID."""
-    try:
-        return SHEET.get_match_by_id(match_id)
-    except LookupError:
-        raise MatchNotFound()
-
-
-@v1_api.get("/matches/{match_id}", response_model=SnookerMatch)
-async def get_match(match_id: str):
-    """Returns a specific match by ID."""
-    match = await get_match_by_id(match_id)
-    return ORJSONResponse(content=match.model_dump(by_alias=True))
-
-
-@v1_api.get("/fixtures", deprecated=True, response_model=SnookerMatchList)
-async def get_fixtures():
-    """Returns unplayed matches. The same as calling /matches with unplayed=True"""
-    fixtures = SHEET.get_fixtures()
-    fixtures_list = SnookerMatchList(round=SHEET.current_round, matches=fixtures)
-    return ORJSONResponse(content=fixtures_list.model_dump(by_alias=True))
-
-
-@v1_api.put("/fixtures", include_in_schema=False)
-async def reset_fixtures():
-    """Resets the fixtures for the current round."""
-    SHEET.reset_fixtures()
-    return ORJSONResponse(content={"message": "Fixtures reset"})
-
-
 # Include the routers in the FastAPI app
 app.include_router(twilio_router)
+app.include_router(v2_api)
 app.include_router(v1_api)
 
 setup_logging()

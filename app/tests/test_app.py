@@ -2,11 +2,14 @@ from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
+from requests.auth import HTTPBasicAuth
 
-from app.models import InferredMatch
 from app.errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
 from app.main import SETTINGS, app
+from app.models import InferredMatch
 from app.sheets import SnookerSheet
+
+from copy import deepcopy
 
 # Mock settings for testing
 SETTINGS.SHEETID = "1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY"
@@ -21,11 +24,9 @@ def no_requests(monkeypatch):
 
 @pytest.fixture(scope="session")
 def test_client():
-    return TestClient(
-        app=app,
-        headers={"Authorization": SETTINGS.API_SECRET},
-        raise_server_exceptions=True,
-    )
+    test_client = TestClient(app, raise_server_exceptions=True)
+    test_client.auth = HTTPBasicAuth(username="", password=SETTINGS.API_SECRET)
+    return test_client
 
 
 @pytest.fixture(scope="class")
@@ -124,15 +125,31 @@ class TestSmsRoutes:
 
 
 class TestApiRoutes:
-    """Tests for POST /api/v1/scores/{match_id}
+    """Tests for POST /api/v*/scores/{match_id}
 
     Tests for posting scores to a match twice:
     1. First time should succeed as match has no scores yet
     2. Second time should fail with 409 Conflict as match already has scores
     """
 
-    path = "/api/v1"
+    API_VERSION = "v2"
+    path = f"/api/{API_VERSION}"
     fixtures = None
+
+    def test_auth_required(self, test_client):
+        """Test that authentication is required for v2 endpoints."""
+        # use patching to disable auth on test_client
+
+        assert test_client
+
+        with patch("test_client.auth", None):
+            response = test_client.get(f"{self.path}/matches")
+            assert response.status_code == 401
+
+            # not just any password should work
+            test_client.auth = HTTPBasicAuth(username="", password="wrongpassword")
+            response = test_client.get(f"{self.path}/matches")
+            assert response.status_code == 401
 
     @classmethod
     def test_get_matches_unplayed(cls, prepared_sheet, test_client):
