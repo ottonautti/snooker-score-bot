@@ -22,7 +22,7 @@ def no_requests(monkeypatch):
     monkeypatch.delattr("langchain.chains.base.Chain.invoke")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="class")
 def test_client():
     test_client = TestClient(app, raise_server_exceptions=True)
     test_client.auth = HTTPBasicAuth(username="", password=SETTINGS.API_SECRET)
@@ -135,21 +135,6 @@ class TestApiRoutes:
     API_VERSION = "v2"
     path = f"/api/{API_VERSION}"
     fixtures = None
-
-    def test_auth_required(self, test_client):
-        """Test that authentication is required for v2 endpoints."""
-        # use patching to disable auth on test_client
-
-        assert test_client
-
-        with patch("test_client.auth", None):
-            response = test_client.get(f"{self.path}/matches")
-            assert response.status_code == 401
-
-            # not just any password should work
-            test_client.auth = HTTPBasicAuth(username="", password="wrongpassword")
-            response = test_client.get(f"{self.path}/matches")
-            assert response.status_code == 401
 
     @classmethod
     def test_get_matches_unplayed(cls, prepared_sheet, test_client):
@@ -269,3 +254,20 @@ class TestApiRoutes:
         )
         assert response.status_code == 422
         assert "detail" in response.json()
+
+
+class TestApiRoutesUnauthenticated:
+    path = TestApiRoutes.path
+
+    def test_get_matches_no_auth(self, test_client):
+        """Test for posting scores without authentication"""
+        # get matches
+        test_client.auth = None
+        response = test_client.get(f"{self.path}/matches")
+        assert response.status_code == 401
+
+    def test_get_matches_wrong_auth(self, test_client):
+        """Test for posting scores with wrong authentication"""
+        test_client.auth = HTTPBasicAuth(username="", password="wrong")
+        response = test_client.get(f"{self.path}/matches")
+        assert response.status_code == 401
