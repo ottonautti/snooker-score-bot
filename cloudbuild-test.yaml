@@ -21,8 +21,8 @@ steps:
       - --image=$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$BUILD_ID
       - --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$BUILD_ID,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
       - '--region=$_DEPLOY_REGION'
-      - '--set-env-vars=NODE_ENV=production,GOOGLESHEETS_SHEETID=1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY'
-      - '--set-secrets=OPENAI_API_KEY=openai-api-key:latest,TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,SNOOKER_API_SECRET=SNOOKER_API_SECRET:latest'
+      - '--set-env-vars=NODE_ENV=test,GOOGLESHEETS_SHEETID=1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY'
+      - '--set-secrets=TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,SNOOKER_API_SECRET=SNOOKER_API_SECRET:latest'
       - '--service-account=$_SERVICE_ACCOUNT'
       - '--max-instances=1'
       - '--quiet'
@@ -32,6 +32,7 @@ images:
   - $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$BUILD_ID
 options:
   substitutionOption: ALLOW_LOOSE
+  logging: CLOUD_LOGGING_ONLY
 substitutions:
   _AR_HOSTNAME: europe-north1-docker.pkg.dev
   _REPO_NAME: gtj-snooker-scores
