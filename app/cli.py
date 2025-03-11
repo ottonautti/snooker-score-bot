@@ -40,7 +40,7 @@ def cli_make_fixtures(ctx):
     """Make match fixtures for the current round"""
     sheet_id = ctx.obj["sheet_id"]
     sheet = SnookerSheet(sheet_id)
-    current_round = sheet.current_round
+    current_round = input("Round?")
 
     print_players(sheet.current_players)
 

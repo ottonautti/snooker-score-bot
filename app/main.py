@@ -89,7 +89,7 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
     """Returns inbound Twilio message details from request form data"""
     # expect application/x-www-form-urlencoded
     if req.headers["Content-Type"] != "application/x-www-form-urlencoded":
-        raise InvalidContentType("application/x-www-form-urlencoded")
+        raise InvalidContentType()
     form_data = await req.form()
     body = form_data.get("Body")
     sender = form_data.get("From")
