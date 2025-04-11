@@ -150,6 +150,7 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
         )
         match: SnookerMatch = fixture.model_copy(update={"outcome": outcome})
         reply = match.summary(link=SETTINGS.SHEET_SHORTLINK)
+        SHEET.record_match(match, log=msg.body)
     except ValidationError as err:
         reply = get_messages().INVALID
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
@@ -157,7 +158,6 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     finally:
         TWILIO.send_message(msg.sender, reply)
 
-    SHEET.record_match(match, log=msg.body)
     return ok_created(dict(message=reply, match=match.model_dump()))
 
 
