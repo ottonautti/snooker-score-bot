@@ -29,7 +29,9 @@ class Twilio:
     def send_message(self, to: str, body: str):
         """Sends a message via Twilio"""
         logging.info('Sending message to %s: "%s"', to, body.replace("\n", " "))
-        return self.client.messages.create(from_=self.from_number, to=to, body=body)
+        # "force delivery" attempts delivery even if to-number looks like a landline
+        # https://www.twilio.com/docs/api/errors/21635
+        return self.client.messages.create(from_=self.from_number, to=to, body=body, force_delivery=True)
 
 
 TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender", "is_test"])
