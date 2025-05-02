@@ -1,5 +1,7 @@
+from copy import deepcopy
 from unittest.mock import patch
 
+import freezegun
 import pytest
 from fastapi.testclient import TestClient
 from requests.auth import HTTPBasicAuth
@@ -9,11 +11,10 @@ from app.main import SETTINGS, app
 from app.models import InferredMatch
 from app.sheets import SnookerSheet
 
-from copy import deepcopy
-
 # Mock settings for testing
 SETTINGS.SHEETID = "1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY"
 TEST_ROUND = 3
+
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +39,7 @@ def prepared_sheet():
     # Any cleanup tasks after each test
     pass
 
-
+@freezegun.freeze_time("2025-10-01")
 class TestSmsRoutes:
     """Tests for POST /sms/scores.
 
@@ -123,7 +124,7 @@ class TestSmsRoutes:
             detail = response.json().get("detail")
             assert detail == MatchNotFound.detail
 
-
+@freezegun.freeze_time("2025-10-01")
 class TestApiRoutes:
     """Tests for POST /api/v*/scores/{match_id}
 
@@ -137,7 +138,7 @@ class TestApiRoutes:
     fixtures = None
 
     @classmethod
-    def test_get_matches_unplayed(cls, prepared_sheet, test_client):
+    def test_get_all_unplayed_matches(cls, prepared_sheet, test_client):
         response = test_client.get(f"{cls.path}/matches?unplayed=true")
         assert response.status_code == 200
         data = response.json()
@@ -145,11 +146,15 @@ class TestApiRoutes:
         assert "matches" in data
         # let's cache the fixtures for later tests, fetching them is expensive
         cls.fixtures = data["matches"]
+        if not cls.fixtures:
+            raise ValueError("No unplayed matches found in the test sheet")
+        assert len(cls.fixtures) > 0
+        assert all(fixture["state"] == "unplayed" for fixture in cls.fixtures)
 
     def test_get_unplayed_match(self, prepared_sheet, test_client):
         """Test for getting a single match, before it's outcome has been recorded."""
         if self.fixtures is None:
-            self.test_get_matches_unplayed(prepared_sheet, test_client)
+            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
         fixture = self.fixtures[0]
         match_id = fixture["id"]
         response = test_client.get(f"{self.path}/matches/{match_id}")
@@ -164,7 +169,7 @@ class TestApiRoutes:
     def test_post_scores_and_get(self, prepared_sheet, test_client):
         """Test for posting scores to a match"""
         if self.fixtures is None:
-            self.test_get_matches_unplayed(prepared_sheet, test_client)
+            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
         fixture = self.fixtures[0]
         match_id = fixture["id"]
         response = test_client.post(
@@ -198,7 +203,7 @@ class TestApiRoutes:
     def test_post_scores_with_valid_breaks(self, prepared_sheet, test_client):
         """Test for posting scores to a match with breaks"""
         if self.fixtures is None:
-            self.test_get_matches_unplayed(prepared_sheet, test_client)
+            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
         target_fixture = self.fixtures[1]
         match_id = target_fixture["id"]
         response = test_client.post(
@@ -222,7 +227,7 @@ class TestApiRoutes:
     def test_post_scores_with_invalid_breaks_raises(self, prepared_sheet, test_client):
         """Test for posting scores to a match with invalid breaks"""
         if self.fixtures is None:
-            self.test_get_matches_unplayed(prepared_sheet, test_client)
+            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
         target_fixture = self.fixtures[2]
         match_id = target_fixture["id"]
 

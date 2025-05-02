@@ -44,8 +44,11 @@ class SnookerScoresLLM:
             }
         )
         try:
-            logging.info(f"{self.llm.__class__.__name__} output: {output['text']}")
-            match = InferredMatch(**json.loads(output["text"]))
+            text = output["text"]
+            logging.info(f"{self.llm.__class__.__name__} output: {text}")
+            # FIXME: Use JsonOutputParser instead of this hack
+            text = text.replace("```json", "").replace("```", "")
+            match = InferredMatch(**json.loads(text))
         except KeyError as e:
             raise RuntimeError(f"Unexpected output from LLM: {output}") from e
         return match
