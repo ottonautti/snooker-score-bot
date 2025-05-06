@@ -32,8 +32,19 @@ steps:
       - '--service-account=$_SERVICE_ACCOUNT'
       - '--max-instances=1'
       - '--quiet'
-    id: Deploy
     entrypoint: gcloud
+      # Then, update the traffic to point to the latest revision
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    args:
+      - run
+      - services
+      - update-traffic
+      - $_SERVICE_NAME
+      - '--platform=managed'
+      - '--region=$_DEPLOY_REGION'
+      - '--to-latest'
+    entrypoint: gcloud
+    id: Deploy
 images:
   - $_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$BUILD_ID
 options:
