@@ -85,6 +85,11 @@ class MatchOutcome(BaseModel):
     def scoreline(self) -> str:
         return f"{self.player1_score}–{self.player2_score}"
 
+    @field_validator("breaks")
+    def sort_breaks(cls, breaks: list[SnookerBreak]) -> list[SnookerBreak]:
+        """Sort breaks by points in descending order."""
+        return sorted(breaks, key=lambda b: b.points, reverse=True)
+
 
 class MatchFixture(BaseModel):
     """Match fixture i.e. an unplayed match between two players of a group"""
@@ -165,9 +170,10 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
         """Breaks have to be by one of the match players"""
         if self.outcome:
             for b in self.outcome.breaks:
-                assert b.player in (self.player1, self.player2), (
-                    f"Break by player not participating in match {b.player}"
-                )
+                assert b.player in (
+                    self.player1,
+                    self.player2,
+                ), f"Break by player not participating in match {b.player}"
         return self
 
     @computed_field
@@ -219,55 +225,30 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
                 )
         return self
 
-    # def validate_against_fixture(self, fixture) -> "SnookerMatch":
-    #     """Asserts the following conditions:
-    #     * Match ID matches the fixture.
-    #     * Group matches the group in the fixture.
-    #     * Players match the players in the concerned fixture (by ID).
-    #         * If the inferred player1 is actually player2 and vice versa, reverse the players.
-    #     * Players can not be the same player.
-
-    #     Returns the match if all conditions are met.
-    #     """
-    #     if self.match_id != fixture.match_id:
-    #         raise MatchFixtureMismatchError(f"Match ID {self.match_id} doesn't match fixture")
-    #     if self.group != fixture.group:
-    #         raise MatchFixtureMismatchError(f"Group mismatch: {self.group} != {fixture.group}")
-    #     # reverse the players if the inferred player1 is actually player2
-    #     # this can be the case depending on LLM's quirks
-    #     if self.player2 == fixture.player1 and self.player1 == fixture.player2:
-    #         self.player1, self.player2 = self.player2, self.player1
-    #         self.outcome.player1_score, self.outcome.player2_score = (
-    #             self.outcome.player2_score,
-    #             self.outcome.player1_score,
-    #         )
-    #     # if players still not matching, raise
-    #     if self.player1 != fixture.player1 or self.player2 != fixture.player2:
-    #         raise MatchFixtureMismatchError("Players do not match those in fixture")
-    #     return self
-
     def summary(self, lang="eng", link=None) -> str:
         """Returns a string representation of the match."""
 
         TEMPLATES = {
             "eng": Template(
                 """
-{{ winner }} won {{ loser }} by {{ winner_score }} frames to {{ loser_score }}.
-{%- if match.breaks -%}
-    Breaks: {% for b in match.breaks -%} {{ b.player.given_name }} {{ b.points }} {%- if not
-    loop.last %}, {% endif %}{%- endfor -%}.
-{%- endif -%}
-"""
+            {{ winner }} won {{ loser }} by {{ winner_score }} frames to {{ loser_score }}.
+            {%- if breaks %} Breaks: {% for b in breaks -%} {{ b.player.given_name }} {{ b.points }}{%- if not loop.last %}, {% endif %}{%- endfor -%}.
+            {%- endif -%}
+            """
             ),
         }
 
-        summary = TEMPLATES[lang].render(
-            match=self,
-            winner=self.winner.name,
-            loser=self.loser.name,
-            winner_score=self.outcome.player1_score if self.winner == self.player1 else self.outcome.player2_score,
-            loser_score=self.outcome.player2_score if self.winner == self.player1 else self.outcome.player1_score,
-        ).strip()
+        summary = (
+            TEMPLATES[lang]
+            .render(
+                winner=self.winner.name,
+                loser=self.loser.name,
+                winner_score=self.outcome.player1_score if self.winner == self.player1 else self.outcome.player2_score,
+                loser_score=self.outcome.player2_score if self.winner == self.player1 else self.outcome.player1_score,
+                breaks=self.outcome.breaks,
+            )
+            .strip()
+        )
 
         if link:
             summary += f"\n\nLeague standings: {link}"

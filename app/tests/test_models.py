@@ -175,3 +175,58 @@ def test_snooker_match_break_by_non_match_player():
             player2_score=1,
             breaks=[SnookerBreak(player=SnookerPlayer(name="Beam Jim", group="L1"), points=100)],
         )
+
+def test_snooker_match_summary_default(mock_fixtures):
+    # Ensure the fixture has players from same group
+    player1 = SnookerPlayer(name="Trump Judd", group="L1")
+    player2 = SnookerPlayer(name="Selby Mark", group="L1")
+
+    # Create a valid outcome that gives a win to player1 (frames_to_win is 2 for best-of-3)
+    outcome = MatchOutcome(
+        player1_score=2,
+        player2_score=1,
+        date=datetime.date(2025, 1, 1),
+        breaks=[]
+    )
+    match = SnookerMatch.from_storage(
+        match_id="123e4567-e89b-12d3-a456-426614174000",
+        player1=player1,
+        player2=player2,
+        group=player1.group,
+        round=1,
+        format=MatchFormats.BEST_OF_THREE.value,
+        outcome=outcome,
+    )
+    summary_text = match.summary(lang="eng")
+    assert "Trump Judd won Selby Mark by 2 frames to 1" in summary_text
+    assert "Breaks:" not in summary_text
+
+
+def test_snooker_match_summary_with_breaks(mock_fixtures):
+    player1 = SnookerPlayer(name="Trump Judd", group="L1")
+    player2 = SnookerPlayer(name="Selby Mark", group="L1")
+
+    # Create a valid outcome that gives a win to player1 (frames_to_win is 2 for best-of-3)
+    outcome = MatchOutcome(
+        player1_score=1,
+        player2_score=2,
+        date=datetime.date(2025, 1, 1),
+        breaks=[
+            SnookerBreak(player=player2, points=50),
+            SnookerBreak(player=player1, points=100),
+            SnookerBreak(player=player1, points=30),
+        ]
+    )
+    match = SnookerMatch.from_storage(
+        match_id="123e4567-e89b-12d3-a456-426614174000",
+        player1=player1,
+        player2=player2,
+        group=player1.group,
+        round=1,
+        format=MatchFormats.BEST_OF_THREE.value,
+        outcome=outcome,
+    )
+
+    summary_text = match.summary(lang="eng")
+    assert "Selby Mark won Trump Judd by 2 frames to 1" in summary_text
+    assert "Breaks: Judd 100, Mark 50, Judd 30." in summary_text
