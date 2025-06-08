@@ -1,5 +1,6 @@
 import os
 from typing import Union
+from langchain_google_vertexai import VertexAI
 
 from app.models import MatchFormats
 
@@ -24,17 +25,17 @@ messages = get_messages("fin")
 
 class Settings:
     _env = "prod"
-    LLM = "vertexai"
+    LLM = VertexAI
     SHEETID = "1R2E2bx-0bj33z7jurkFAQED-24mgDQzYYmnm68lk5bY"
     SHEET_SHORTLINK = "https://tinyurl.com/groovesnk"  # shortened URL to the Google Sheet
     API_SECRET = os.getenv("SNOOKER_API_SECRET")
-    FORMAT = MatchFormats.LEAGUE
+    MATCH_FORMAT = MatchFormats.LEAGUE.value
 
 
 class SixRedSettings(Settings):
-    SHEETID = "xxx"
-    SHEET_SHORTLINK = "https://tinyurl.com/groovesnk/sixred"  # shortened URL to the Google Sheet
-    FORMAT = MatchFormats.SIXRED
+    SHEETID = "16MlIIRn1WSLHpdGeArKB2-NzyN68zg4qXaU0UWGVUYs"
+    SHEET_SHORTLINK = "tinyurl.com/gjss25"  # shortened URL to the Google Sheet
+    MATCH_FORMAT = MatchFormats.SIXRED.value
 
 class TestSettings(Settings):
     _env = "test"
@@ -42,10 +43,9 @@ class TestSettings(Settings):
 
 
 def get_settings() -> Settings:
-    # if env var "SIXRED" == 1
-    if os.getenv("SIXRED") == "1":
-        return Settings
+    if os.getenv("SNOOKER_SIXRED") == "1":
+        return SixRedSettings()
     env = os.getenv("NODE_ENV", "test")
     if env.upper() == "PROD":
-        return Settings
-    return TestSettings
+        return Settings()
+    return TestSettings()

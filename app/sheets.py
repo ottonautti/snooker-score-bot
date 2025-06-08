@@ -10,6 +10,9 @@ import google.auth
 import gspread
 import pytz
 
+from app.errors import MatchAlreadyCompleted, MatchFixtureMismatchError, MatchNotFound
+from app.settings import Settings, SixRedSettings
+
 from .models import (
     MatchFixture,
     MatchOutcome,
@@ -33,6 +36,7 @@ def try_parse_date(date_str: str):
         return datetime.strptime(date_str, SHEETS_DATE_FORMAT).date()
     except (TypeError, ValueError):
         return None
+
 
 class SnookerSheet:
     def __init__(self, spreadsheet_id: str):
@@ -62,19 +66,6 @@ class SnookerSheet:
         return self.gsheet.worksheet("_breaks")
 
     @cached_property
-    def current_round(self) -> int:
-        """Get the current round number."""
-        rounds = self.gsheet.values_get("nr_rounds").get("values")
-        today = datetime.now().date()
-        for r in sorted(rounds, key=lambda x: int(x[0]), reverse=True):
-            round = int(r[0])
-            start_date = datetime.strptime(r[1], SHEETS_DATE_FORMAT).date()
-            end_date = datetime.strptime(r[2], SHEETS_DATE_FORMAT).date()
-            if today >= start_date:
-                return round
-        return None
-
-    @cached_property
     def current_players(self) -> List[SnookerPlayer]:
         """Get list of current players from spreadsheet."""
         players_rows = self.gsheet.values_get("nr_currentPlayers").get("values")
@@ -88,6 +79,10 @@ class SnookerSheet:
             )
             for plr in players_rows
         ]
+
+    @property
+    def current_round(self) -> int:
+        return None
 
     def _unhide_all_columns(self, ws: gspread.Worksheet):
         """Unhide all columns in worksheet.
@@ -117,7 +112,7 @@ class SnookerSheet:
             timestamp = datetime.now()
         return (timestamp - datetime(1899, 12, 30).date()).days
 
-    def add_breaks(self, breaks: list[SnookerBreak], date=None):
+    def record_breaks(self, breaks: list[SnookerBreak], date=None):
         """Record break to spreadsheet"""
         self._unhide_all_columns(self.matches_sheet)
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -178,6 +173,109 @@ class SnookerSheet:
 
         return matches
 
+    def _get_match_data_by_id(self, match_id: str) -> Tuple[dict, int]:
+        """Lookup match by ID. Return row data and row number."""
+        # find the row where the fixture is located (in_column=1 means column A)
+        match = self.matches_sheet.find(match_id, in_column=1)
+        if not match:
+            raise LookupError(f"Match with ID {match_id} not found")
+        # get the row data
+        values = self.matches_sheet.row_values(match.row)
+        data = dict(zip(self.matches_sheet.row_values(1), values))
+        nth_row = match.row
+        return data, nth_row
+
+    def get_match_by_id(self, match_id: str) -> SnookerMatch:
+        data, _ = self._get_match_data_by_id(match_id)
+        match = SnookerMatch.from_storage(
+            match_id=match_id,
+            date=try_parse_date(data.pop("date", None)),
+            player1=SnookerPlayer(name=data.pop("player1"), group=data.get("group")),
+            player2=SnookerPlayer(name=data.pop("player2"), group=data.get("group")),
+            round=data.pop("round"),
+            group=data.pop("group"),
+        )
+        if data.get("winner"):
+            match.outcome = MatchOutcome(
+                date=try_parse_date(data.get("date")),
+                player1_score=data.get("player1_score"),
+                player2_score=data.get("player2_score"),
+                winner=data.get("winner"),
+            )
+        return match
+
+    def record_match(*arg, **kwargs):
+        raise NotImplementedError("This method is implemented in subclasses")
+
+    def lookup_match_by_player_names(self, players=tuple[str, str], round: int = None) -> SnookerMatch:
+        """Lookup match by player names and round number."""
+        if round is None:
+            round = self.current_round
+        assert len(players) == 2, "Provide exactly two player names"
+        assert players[0] != players[1], "Players must be different"
+        matches = self.get_matches(round=round)
+        for match in matches:
+            if match.player1.name in players and match.player2.name in players:
+                return match
+        return None
+
+    def assert_match_not_completed(self, match: SnookerMatch):
+        """Assert that match is not found in the sheet."""
+        if match := self.lookup_match_by_player_names((match.player1.name, match.player2.name)):
+            if match.completed:
+                raise MatchAlreadyCompleted()
+
+
+class InsertMatchSnookerSheet(SnookerSheet):
+    """Snooker sheet that does not require fixtures to be prepared in advance.
+
+    Enables players to join the league at any time and play matches without
+    waiting for fixtures to be created.
+    """
+
+    current_round = 1
+
+    def record_match(self, match: SnookerMatch, log: str = None):
+        """Inserts match outcome into the sheet without fixtures."""
+        self.assert_match_not_completed(match)
+        if match.outcome.breaks:
+            self.record_breaks(match.outcome.breaks, date=match.outcome.date)
+        headers = self.matches_sheet.row_values(1)
+        row = {
+            "id": match.match_id,
+            "group": match.player1.group,
+            "player1": match.player1.name,
+            "player2": match.player2.name,
+            "player1_score": match.outcome.player1_score,
+            "player2_score": match.outcome.player2_score,
+            "winner": match.winner.name,
+            "date": self.days_since_1900(match.outcome.date),
+            "round": match.round,
+            "log": log or "",
+        }
+        values = [row.get(header, "") for header in headers]
+        self.matches_sheet.append_row(values)
+        return match
+
+
+class PreparedFixturesSnookerSheet(SnookerSheet):
+    """Snooker sheet that uses match fixtures prepared in advance.
+
+    Players are known in advance and fixtures are created for each round."""
+
+    @cached_property
+    def current_round(self) -> int:
+        """Get the current round number."""
+        rounds = self.gsheet.values_get("nr_rounds").get("values")
+        today = datetime.now().date()
+        for r in sorted(rounds, key=lambda x: int(x[0]), reverse=True):
+            round = int(r[0])
+            start_date = datetime.strptime(r[1], SHEETS_DATE_FORMAT).date()
+            end_date = datetime.strptime(r[2], SHEETS_DATE_FORMAT).date()
+            if today >= start_date:
+                return round
+        return None
+
     def get_fixtures(self) -> List[MatchFixture]:
         return self.get_matches(unplayed_only=True)
 
@@ -226,37 +324,6 @@ class SnookerSheet:
         self.delete_matches(force=True)
         self.make_fixtures(round)
 
-    def _get_match_data_by_id(self, match_id: str) -> Tuple[dict, int]:
-        """Lookup match by ID. Return row data and row number."""
-        # find the row where the fixture is located (in_column=1 means column A)
-        match = self.matches_sheet.find(match_id, in_column=1)
-        if not match:
-            raise LookupError(f"Match with ID {match_id} not found")
-        # get the row data
-        values = self.matches_sheet.row_values(match.row)
-        data = dict(zip(self.matches_sheet.row_values(1), values))
-        nth_row = match.row
-        return data, nth_row
-
-    def get_match_by_id(self, match_id: str) -> SnookerMatch:
-        data, _ = self._get_match_data_by_id(match_id)
-        match = SnookerMatch.from_storage(
-            match_id=match_id,
-            date=try_parse_date(data.pop("date", None)),
-            player1=SnookerPlayer(name=data.pop("player1"), group=data.get("group")),
-            player2=SnookerPlayer(name=data.pop("player2"), group=data.get("group")),
-            round=data.pop("round"),
-            group=data.pop("group"),
-        )
-        if data.get("winner"):
-            match.outcome = MatchOutcome(
-                date=try_parse_date(data.get("date")),
-                player1_score=data.get("player1_score"),
-                player2_score=data.get("player2_score"),
-                winner=data.get("winner"),
-            )
-        return match
-
     def update_match_by_id(self, m_id: str, updates: dict):
         """Update match fields by ID with the provided updates dictionary."""
         # get the fixture data and row number per sheets
@@ -273,7 +340,19 @@ class SnookerSheet:
 
         Assert that player names according to sheet match the fixture.
         """
-        m_id = match.match_id
+        self.assert_match_not_completed(match)
+        fixturrecord_matche: SnookerMatch = self.lookup_match_by_player_names((match.player1, match.player2))
+        if not fixture:
+            raise MatchNotFound()
+        # if player order is reverse of fixture, swap them in the match
+        if match.player2 == fixture.player1.name and match.player1 == fixture.player2.name:
+            match.player1, match.player2 = match.player2, match.player1
+            match.player1_score, match.player2_score = (match.player2_score, match.player1_score)
+        # if players still not matching, raise
+        if match.player1 != fixture.player1.name or match.player2 != fixture.player2.name:
+            raise MatchFixtureMismatchError("Players do not match those in fixture")
+
+        m_id = fixture.match_id
         sheets_match = self.get_match_by_id(m_id)
         if sheets_match.winner:
             raise ValueError(f"Match {m_id} (round {match.round}) already has a winner")
@@ -282,7 +361,7 @@ class SnookerSheet:
         if sheets_match.player2 != match.player2:
             raise ValueError(f"Player2 mismatch: expected {sheets_match['player2']}, got {match.player2}")
 
-        self.add_breaks(match.outcome.breaks, date=match.outcome.date)
+        self.record_breaks(match.breaks, date=match.date)
 
         updates = {
             "date": self.days_since_1900(match.outcome.date),
@@ -295,14 +374,14 @@ class SnookerSheet:
 
         return match
 
-    def lookup_match_by_player_names(self, players=tuple[str, str], round: int = None) -> SnookerMatch:
-        """Lookup match by player names and round number."""
-        if round is None:
-            round = self.current_round
-        assert len(players) == 2, "Provide exactly two player names"
-        assert players[0] != players[1], "Players must be different"
-        matches = self.get_matches(round=round)
-        for match in matches:
-            if match.player1.name in players and match.player2.name in players:
-                return match
-        return None
+
+def get_sheet_client(settings: Settings) -> SnookerSheet:
+    """Get a Google Sheets client with default credentials."""
+    sheet_id = settings.SHEETID
+    if isinstance(settings, SixRedSettings):
+        sheet_type = InsertMatchSnookerSheet
+    else:
+        sheet_type = PreparedFixturesSnookerSheet
+    if not sheet_id:
+        raise ValueError("Google Sheets ID is not set in settings")
+    return sheet_type(spreadsheet_id=sheet_id)

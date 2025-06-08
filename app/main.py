@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 from typing import Literal
+from datetime import datetime
 
 import google.cloud.logging
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
@@ -15,10 +16,9 @@ from pydantic import BaseModel, Field, ValidationError
 from .errors import (
     InvalidMatchError,
     MatchAlreadyCompleted,
-    MatchFixtureMismatchError,
     MatchNotFound,
 )
-from .llm.inference import SnookerScoresLLM
+from .llm.inference import SnookerScoresLLM, get_llm_client
 from .models import (
     InferredMatch,
     MatchOutcome,
@@ -28,16 +28,15 @@ from .models import (
     SnookerMatchList,
 )
 from .settings import get_messages, get_settings
-from .sheets import SnookerSheet
-from .sixred import sixred_router
-from .twilio_client import Twilio, parse_twilio_msg
+from .sheets import get_sheet_client
+from .twilio_client import get_twilio_client, parse_twilio_msg
 from .utils import ok_created
 
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
 SETTINGS = get_settings()
-TWILIO = Twilio()
-SHEET = SnookerSheet(SETTINGS.SHEETID)
-LLM = SnookerScoresLLM()
+TWILIO = get_twilio_client(SETTINGS)
+SHEET = get_sheet_client(SETTINGS)
+LLM = get_llm_client(SETTINGS)
 
 
 def setup_logging():
@@ -82,7 +81,6 @@ twilio_router = APIRouter(prefix="/sms")
 # API Routers
 v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True)
 v2_api = APIRouter(prefix="/api/v2", dependencies=[Depends(basic_auth)])
-app.include_router(sixred_router, prefix="/sixred", tags=["sixred"], include_in_schema=False)
 
 
 # Twilio SMS Endpoint
@@ -90,33 +88,32 @@ app.include_router(sixred_router, prefix="/sixred", tags=["sixred"], include_in_
 async def post_scores_sms(msg=Depends(parse_twilio_msg)):
     """Handles inbound scores via SMS"""
     logging.info("Received SMS from %s: %s", msg.sender, msg.body)
-    inferred: InferredMatch = LLM.infer(passage=msg.body, known_players=SHEET.current_players)
-    fixture: SnookerMatch = SHEET.lookup_match_by_player_names((inferred.player1, inferred.player2))
-    if not fixture:
-        raise MatchNotFound()
-    if fixture.completed:
-        raise MatchAlreadyCompleted()
-    if inferred.player2 == fixture.player1.name and inferred.player1 == fixture.player2.name:
-        inferred.player1, inferred.player2 = inferred.player2, inferred.player1
-        inferred.player1_score, inferred.player2_score = (inferred.player2_score, inferred.player1_score)
-    # if players still not matching, raise
-    if inferred.player1 != fixture.player1.name or inferred.player2 != fixture.player2.name:
-        raise MatchFixtureMismatchError("Players do not match those in fixture")
+    inferred: InferredMatch = LLM.infer(
+        passage=msg.body,
+        known_players=SHEET.current_players,
+    )
     try:
-        reply: str = ""
-        breaks = [SnookerBreak.from_dict(b) for b in inferred.breaks]
         outcome = MatchOutcome(
-            player1_score=inferred.player1_score, player2_score=inferred.player2_score, breaks=breaks
+            player1_score=inferred.player1_score,
+            player2_score=inferred.player2_score,
+            breaks=[SnookerBreak.from_dict(b) for b in inferred.breaks],
         )
-        match: SnookerMatch = fixture.model_copy(update={"outcome": outcome})
+        match = SnookerMatch(
+            player1=inferred.player1,
+            player2=inferred.player2,
+            outcome=outcome,
+            group=inferred.group,
+            round=SHEET.current_round,
+            format=SETTINGS.MATCH_FORMAT,
+        )
         reply = match.summary(link=SETTINGS.SHEET_SHORTLINK)
         SHEET.record_match(match, log=msg.body)
+        TWILIO.send_message(msg.sender, reply)
     except ValidationError as err:
         reply = get_messages().INVALID
         error_messages: list[str] = [err.get("msg") for err in err.errors()]
-        raise InvalidMatchError(error_messages)
-    finally:
         TWILIO.send_message(msg.sender, reply)
+        raise InvalidMatchError(error_messages)
 
     return ok_created(dict(message=reply, match=match.model_dump()))
 

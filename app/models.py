@@ -102,11 +102,11 @@ class MatchFixture(BaseModel):
     """Match fixture i.e. an unplayed match between two players of a group"""
 
     _match_id: uuid.UUID = PrivateAttr(default_factory=lambda: uuid.uuid4())
-    round: Optional[int] = Field(alias="round", default=None)
+    round: Optional[int] = Field(default=None)
     group: str
     player1: SnookerPlayer
     player2: SnookerPlayer
-    format: MatchFormat = Field(default_factory=lambda: MatchFormats.LEAGUE.value)
+    format: Optional[MatchFormat] = None
 
     @property
     def match_id(self) -> str:
@@ -224,12 +224,13 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
             losing_score = min(self.outcome.player1_score, self.outcome.player2_score)
             if self.outcome.player1_score is None or self.outcome.player2_score is None:
                 raise PydanticCustomError("match_scoreline_error", "Incomplete outcome")
-            if any([winning_score != self.format.frames_to_win, not 0 <= losing_score < winning_score]):
-                raise PydanticCustomError(
-                    "match_scoreline_error",
-                    f"Scoreline {self.outcome.scoreline} does not match the match format "
-                    + f"(best of {self.format.best_of} frames)",
-                )
+            if isinstance(self.format, MatchFormat):
+                if any([winning_score != self.format.frames_to_win, not 0 <= losing_score < winning_score]):
+                    raise PydanticCustomError(
+                        "match_scoreline_error",
+                        f"Scoreline {self.outcome.scoreline} does not match the match format "
+                        + f"(best of {self.format.best_of} frames)",
+                    )
         return self
 
     def summary(self, lang="eng", link=None) -> str:

@@ -6,6 +6,7 @@ from fastapi import HTTPException, Request, status
 from twilio.rest import Client
 
 from app.errors import InvalidContentType
+from app.settings import Settings
 
 TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender", "is_test"])
 
@@ -28,13 +29,7 @@ async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
 class Twilio:
     skip_send = os.environ.get("TWILIO_NO_SEND", False)
 
-    def __init__(self, account_sid: str = None, auth_token: str = None, from_number: str = None):
-        if not account_sid:
-            account_sid = os.environ.get("TWILIO_ACCOUNTSID")
-        if not auth_token:
-            auth_token = os.environ.get("TWILIO_AUTHTOKEN")
-        if not from_number:
-            from_number = os.environ.get("TWILIO_FROM")
+    def __init__(self, account_sid: str, auth_token: str, from_number: str):
         if not account_sid or not auth_token or not from_number:
             raise ValueError("Missing Twilio credentials")
         self.client = Client(account_sid, auth_token)
@@ -52,3 +47,13 @@ class Twilio:
         # "force delivery" attempts delivery even if to-number looks like a landline
         # https://www.twilio.com/docs/api/errors/21635
         return self.client.messages.create(from_=self.from_number, to=to, body=body, force_delivery=True)
+
+
+def get_twilio_client(settings: Settings) -> Twilio:
+    """Returns a Twilio client instance with credentials taken from settings or environment variables"""
+    account_sid = os.environ.get("TWILIO_ACCOUNTSID")
+    auth_token = os.environ.get("TWILIO_AUTHTOKEN")
+    from_number = os.environ.get("TWILIO_FROM")
+    if not (account_sid and auth_token and from_number):
+        raise ValueError("Missing Twilio credentials")
+    return Twilio(account_sid=account_sid, auth_token=auth_token, from_number=from_number)

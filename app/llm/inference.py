@@ -3,12 +3,13 @@
 import json
 import logging
 import os
+from typing import Union
 
 from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains.llm import LLMChain
-from langchain_google_vertexai import VertexAI
-from pydantic import BaseModel
+from langchain_core.language_models.llms import BaseLLM
 from app.models import SnookerPlayer, InferredMatch
+from app.settings import Settings
 
 from . import prompts
 
@@ -20,12 +21,10 @@ stdout_handler = StdOutCallbackHandler()
 class SnookerScoresLLM:
     """LLM client for extracting snooker scores from messages"""
 
-    def __init__(
-        self,
-        llm=VertexAI,  # default to VertexAI (Google)
-        model_name=None,
-        prompt=None,
-    ):
+    def __init__(self, llm: BaseLLM = None, model_name=None, prompt=None):
+        """Initialize the LLM client."""
+        if not issubclass(llm, BaseLLM):
+            raise TypeError(f"Expected llm to be a BaseLLM instance, got {type(llm)}")
         self.llm = llm(model_name=model_name)
         self.verbose = bool(os.getenv("LANGCHAIN_VERBOSE", False))
         if not prompt:
@@ -52,3 +51,8 @@ class SnookerScoresLLM:
         except KeyError as e:
             raise RuntimeError(f"Unexpected output from LLM: {output}") from e
         return match
+
+
+def get_llm_client(settings: Settings) -> SnookerScoresLLM:
+    """Get the LLM client based on the settings."""
+    return SnookerScoresLLM(llm=settings.LLM)

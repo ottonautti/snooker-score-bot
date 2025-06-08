@@ -32,8 +32,6 @@ def get_prompt():
     as the other player in the match.
 
     If a break is not explicitly mentioned in the passage, return an empty list for breaks.
-
-    Also, if it seems certain that the passage is in English, output `language` as "eng", otherwise assume "fin".
     """
 
     return FewShotPromptWithTemplates(
