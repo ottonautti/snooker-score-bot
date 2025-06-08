@@ -2,7 +2,27 @@ import logging
 import os
 from collections import namedtuple
 
+from fastapi import HTTPException, Request, status
 from twilio.rest import Client
+
+from app.errors import InvalidContentType
+
+TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender", "is_test"])
+
+
+async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
+    """Returns inbound Twilio message details from request form data"""
+    # expect application/x-www-form-urlencoded
+    if req.headers["Content-Type"] != "application/x-www-form-urlencoded":
+        raise InvalidContentType()
+    form_data = await req.form()
+    body = form_data.get("Body")
+    sender = form_data.get("From")
+    # set is_test to True if the message contains TEST
+    is_test = bool(body and "TEST" in body)
+    if not body or not sender:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Twilio message")
+    return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
 
 
 class Twilio:
@@ -32,6 +52,3 @@ class Twilio:
         # "force delivery" attempts delivery even if to-number looks like a landline
         # https://www.twilio.com/docs/api/errors/21635
         return self.client.messages.create(from_=self.from_number, to=to, body=body, force_delivery=True)
-
-
-TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender", "is_test"])

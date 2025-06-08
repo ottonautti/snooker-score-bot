@@ -8,7 +8,6 @@ from typing import List, Tuple
 
 import google.auth
 import gspread
-import gspread.utils
 import pytz
 
 from .models import (
@@ -35,7 +34,6 @@ def try_parse_date(date_str: str):
     except (TypeError, ValueError):
         return None
 
-
 class SnookerSheet:
     def __init__(self, spreadsheet_id: str):
         credentials, project_id = google.auth.default(
@@ -44,6 +42,7 @@ class SnookerSheet:
                 "https://www.googleapis.com/auth/drive",
             ]
         )
+
         self.spreadsheet_id = spreadsheet_id
         self.client = gspread.authorize(credentials)
         self.gsheet = self.client.open_by_key(spreadsheet_id)

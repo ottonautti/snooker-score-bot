@@ -3,18 +3,16 @@
 import logging
 import os
 import sys
-from typing import List, Literal, Optional
+from typing import Literal
 
 import google.cloud.logging
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
-from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field, ValidationError
 
 from .errors import (
-    InvalidContentType,
     InvalidMatchError,
     MatchAlreadyCompleted,
     MatchFixtureMismatchError,
@@ -24,14 +22,16 @@ from .llm.inference import SnookerScoresLLM
 from .models import (
     InferredMatch,
     MatchOutcome,
+    ScoreRequest,
     SnookerBreak,
     SnookerMatch,
     SnookerMatchList,
-    SnookerPlayer,
 )
 from .settings import get_messages, get_settings
 from .sheets import SnookerSheet
-from .twilio_client import Twilio, TwilioInboundMessage
+from .sixred import sixred_router
+from .twilio_client import Twilio, parse_twilio_msg
+from .utils import ok_created
 
 DEBUG = bool(os.environ.get("SNOOKER_DEBUG", False))
 SETTINGS = get_settings()
@@ -82,47 +82,7 @@ twilio_router = APIRouter(prefix="/sms")
 # API Routers
 v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True)
 v2_api = APIRouter(prefix="/api/v2", dependencies=[Depends(basic_auth)])
-
-
-# Utility Functions
-async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
-    """Returns inbound Twilio message details from request form data"""
-    # expect application/x-www-form-urlencoded
-    if req.headers["Content-Type"] != "application/x-www-form-urlencoded":
-        raise InvalidContentType()
-    form_data = await req.form()
-    body = form_data.get("Body")
-    sender = form_data.get("From")
-    # set is_test to True if the message contains TEST
-    is_test = bool(body and "TEST" in body)
-    if not body or not sender:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Twilio message")
-    return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
-
-
-def ok_created(content) -> ORJSONResponse:
-    """Returns a successful response"""
-    return ORJSONResponse(jsonable_encoder(content), status_code=status.HTTP_201_CREATED)
-
-
-async def get_match_by_id(match_id: str) -> SnookerMatch:
-    """Returns a specific match by ID."""
-    try:
-        return SHEET.get_match_by_id(match_id)
-    except LookupError:
-        raise MatchNotFound()
-
-
-# Models
-class BreakRequest(BaseModel):
-    player: Literal["player1", "player2"]
-    points: int
-
-
-class ScoreRequest(BaseModel):
-    breaks: Optional[list[BreakRequest]]
-    player1_score: int
-    player2_score: int
+app.include_router(sixred_router, prefix="/sixred", tags=["sixred"], include_in_schema=False)
 
 
 # Twilio SMS Endpoint
@@ -162,6 +122,14 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
 
 
 # V2 API Endpoints
+async def get_match_by_id(match_id: str) -> SnookerMatch:
+    """Returns a specific match by ID."""
+    try:
+        return SHEET.get_match_by_id(match_id)
+    except LookupError:
+        raise MatchNotFound()
+
+
 @v2_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
 async def post_scores(body: ScoreRequest, match_id: str):
     """Handles inbound scores via API with Basic Auth"""

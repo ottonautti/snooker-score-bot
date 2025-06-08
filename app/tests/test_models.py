@@ -1,10 +1,12 @@
 import datetime
-from itertools import permutations
 import uuid
+from itertools import permutations
+
 import pytest
 from pydantic import ValidationError
 
 from app.models import (
+    InferredMatch,
     MatchFixture,
     MatchFormat,
     MatchFormats,
@@ -12,7 +14,6 @@ from app.models import (
     SnookerBreak,
     SnookerMatch,
     SnookerPlayer,
-    InferredMatch
 )
 
 
@@ -42,7 +43,7 @@ def mock_fixtures(mock_players):
                     group=player1.group,
                     player1=player1.name,
                     player2=player2.name,
-                    format=MatchFormats.BEST_OF_THREE.value,
+                    format=MatchFormats.LEAGUE.value,
                 )
             )
     return fixtures
@@ -64,7 +65,7 @@ def test_snooker_break(mock_players):
 
 
 def test_match_format():
-    format = MatchFormats.BEST_OF_THREE.value
+    format = MatchFormats.LEAGUE.value
     assert format.best_of == 3
     assert format.num_reds == 15
 
@@ -78,7 +79,7 @@ def test_create_match_fixture():
     assert match.player1.name == "Player One"
     assert match.player2.name == "Player Two"
     assert match.group == "L1"
-    assert match.format == MatchFormats.BEST_OF_THREE.value
+    assert match.format == MatchFormats.LEAGUE.value
 
 
 def test_deserialize_match_fixture():
@@ -124,7 +125,7 @@ def test_snooker_match(mock_fixtures):
         player2=fixture.player2,
         group=fixture.group,
         round=fixture.round,
-        format=MatchFormats.BEST_OF_THREE.value,
+        format=MatchFormats.LEAGUE.value,
         outcome=outcome,
     )
     md = match.model_dump()
@@ -194,7 +195,7 @@ def test_snooker_match_summary_default(mock_fixtures):
         player2=player2,
         group=player1.group,
         round=1,
-        format=MatchFormats.BEST_OF_THREE.value,
+        format=MatchFormats.LEAGUE.value,
         outcome=outcome,
     )
     summary_text = match.summary(lang="eng")
@@ -223,7 +224,7 @@ def test_snooker_match_summary_with_breaks(mock_fixtures):
         player2=player2,
         group=player1.group,
         round=1,
-        format=MatchFormats.BEST_OF_THREE.value,
+        format=MatchFormats.LEAGUE.value,
         outcome=outcome,
     )
 

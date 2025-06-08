@@ -24,14 +24,17 @@ messages = get_messages("fin")
 
 class Settings:
     _env = "prod"
-    MAX_SCORE = 2  # Matches are best of 3
     LLM = "vertexai"
     SHEETID = "1R2E2bx-0bj33z7jurkFAQED-24mgDQzYYmnm68lk5bY"
     SHEET_SHORTLINK = "https://tinyurl.com/groovesnk"  # shortened URL to the Google Sheet
     API_SECRET = os.getenv("SNOOKER_API_SECRET")
-    MAX_SCORE = 2  # Matches are best of 3
-    FORMAT = MatchFormats.BEST_OF_THREE
+    FORMAT = MatchFormats.LEAGUE
 
+
+class SixRedSettings(Settings):
+    SHEETID = "xxx"
+    SHEET_SHORTLINK = "https://tinyurl.com/groovesnk/sixred"  # shortened URL to the Google Sheet
+    FORMAT = MatchFormats.SIXRED
 
 class TestSettings(Settings):
     _env = "test"
@@ -39,6 +42,9 @@ class TestSettings(Settings):
 
 
 def get_settings() -> Settings:
+    # if env var "SIXRED" == 1
+    if os.getenv("SIXRED") == "1":
+        return Settings
     env = os.getenv("NODE_ENV", "test")
     if env.upper() == "PROD":
         return Settings

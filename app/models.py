@@ -4,15 +4,21 @@ from enum import Enum
 from typing import Any, Optional, Union
 
 from jinja2 import Template
-from pydantic import (
-    BaseModel,
-    computed_field,
-    field_validator,
-    model_serializer,
-    model_validator,
-)
+from pydantic import BaseModel, computed_field, field_validator, model_serializer, model_validator
 from pydantic.fields import Field, PrivateAttr
 from pydantic_core import PydanticCustomError
+from typing import Literal
+
+
+class BreakRequest(BaseModel):
+    player: Literal["player1", "player2"]
+    points: int
+
+
+class ScoreRequest(BaseModel):
+    breaks: Optional[list[BreakRequest]]
+    player1_score: int
+    player2_score: int
 
 
 class SnookerPlayer(BaseModel):
@@ -70,7 +76,8 @@ class MatchFormat(BaseModel):
 
 
 class MatchFormats(Enum):
-    BEST_OF_THREE = MatchFormat(best_of=3, num_reds=15)
+    LEAGUE = MatchFormat(best_of=3, num_reds=15)
+    SIXRED = MatchFormat(best_of=5, num_reds=6)
 
 
 class MatchOutcome(BaseModel):
@@ -99,7 +106,7 @@ class MatchFixture(BaseModel):
     group: str
     player1: SnookerPlayer
     player2: SnookerPlayer
-    format: MatchFormat = Field(default_factory=lambda: MatchFormats.BEST_OF_THREE.value)
+    format: MatchFormat = Field(default_factory=lambda: MatchFormats.LEAGUE.value)
 
     @property
     def match_id(self) -> str:
