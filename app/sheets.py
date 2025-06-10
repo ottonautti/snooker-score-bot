@@ -67,18 +67,13 @@ class SnookerSheet:
 
     @cached_property
     def current_players(self) -> List[SnookerPlayer]:
-        """Get list of current players from spreadsheet."""
+        """Get list of current players from spreadsheet.
+
+        Assumes column order 'group', 'name' in the 'nr_currentPlayers' sheet."""
         players_rows = self.gsheet.values_get("nr_currentPlayers").get("values")
         if not players_rows:
-            return RuntimeError("No players found in spreadsheet")
-        header_order = ["name", "group"]
-        return [
-            SnookerPlayer(
-                name=plr[header_order.index("name")],
-                group=plr[header_order.index("group")],
-            )
-            for plr in players_rows
-        ]
+            raise RuntimeError("No players found in spreadsheet")
+        return [SnookerPlayer(name=row[1], group=row[0]) for row in players_rows if len(row) >= 2]
 
     @property
     def current_round(self) -> int:
