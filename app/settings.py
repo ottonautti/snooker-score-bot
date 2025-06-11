@@ -7,11 +7,12 @@ from app.models import MatchFormats
 
 class EngMessages:
     INVALID = "Sorry, I could not understand the message."
+    ALREADY_COMPLETED = "Match {} has already been played."
 
 
 class FinMessages:
     INVALID = "En ymmärtänyt viestiä, pahoittelut."
-
+    ALREADY_COMPLETED = "Ottelu {} on jo pelattu."
 
 def get_messages(lang: str = "eng") -> Union[FinMessages, EngMessages]:
     return {

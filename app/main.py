@@ -109,6 +109,10 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
         reply = match.summary(link=SETTINGS.SHEET_SHORTLINK)
         SHEET.record_match(match, log=msg.body)
         TWILIO.send_message(msg.sender, reply)
+    except MatchAlreadyCompleted as err:
+        reply = get_messages().ALREADY_COMPLETED.format(match)
+        TWILIO.send_message(msg.sender, reply)
+        raise err
     except ValidationError as err:
         reply = get_messages().INVALID
         error_messages: list[str] = [err.get("msg") for err in err.errors()]

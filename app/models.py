@@ -167,6 +167,9 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
 
     outcome: Optional[MatchOutcome] = None
 
+    def __str__(self):
+        return f"{self.player1} vs {self.player2}"
+
     @computed_field
     def state(self) -> str:
         """Returns the state of the match."""
