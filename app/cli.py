@@ -3,10 +3,10 @@ import logging
 import click
 from tabulate import tabulate
 
-from .sheets import SnookerSheet
+from .sheets import SnookerSheet, PreparedFixturesSnookerSheet
 
 
-def print_players(players):
+def _print_players(players):
     """Display current players and round"""
     player_table = [[player.name, player.group] for player in players]
     print(tabulate(player_table, headers=["PLAYER", "GROUP"], tablefmt="simple"))
@@ -17,32 +17,32 @@ def print_players(players):
 @click.pass_context
 def cli(ctx, sheet_id):
     if not sheet_id:
-        sheet_id = input("Please enter the sheet ID: ")
+        sheet_id = input("Sheet ID: ")
     ctx.ensure_object(dict)
     ctx.obj["sheet_id"] = sheet_id
 
 
 @cli.command()
 @click.pass_context
-def cli_print_players(ctx):
+def list_players(ctx):
     """List current players"""
     sheet_id = ctx.obj["sheet_id"]
     sheet = SnookerSheet(sheet_id)
     current_round = sheet.current_round
     players = sheet.current_players
     print(f"Current Round: {current_round}")
-    print_players(players)
+    _print_players(players)
 
 
 @cli.command()
 @click.pass_context
-def cli_make_fixtures(ctx):
+def make_fixtures(ctx):
     """Make match fixtures for the current round"""
     sheet_id = ctx.obj["sheet_id"]
-    sheet = SnookerSheet(sheet_id)
-    current_round = input("Round?")
+    sheet = PreparedFixturesSnookerSheet(sheet_id)
+    current_round = input("Round: ")
 
-    print_players(sheet.current_players)
+    _print_players(sheet.current_players)
 
     # fmt: off
     confirmation = input(f"\nAre you sure you want to create match fixtures?\n"

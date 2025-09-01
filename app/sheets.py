@@ -73,7 +73,7 @@ class SnookerSheet:
         players_rows = self.gsheet.values_get("nr_currentPlayers").get("values")
         if not players_rows:
             raise RuntimeError("No players found in spreadsheet")
-        return [SnookerPlayer(name=row[1], group=row[0]) for row in players_rows if len(row) >= 2]
+        return [SnookerPlayer(name=row[0], group=row[1]) for row in players_rows if len(row) >= 2]
 
     @property
     def current_round(self) -> int:
@@ -199,10 +199,12 @@ class SnookerSheet:
             )
         return match
 
-    def record_match(*arg, **kwargs):
+    def record_match(self, *arg, **kwargs):
         raise NotImplementedError("This method is implemented in subclasses")
 
-    def lookup_match_by_player_names(self, players=tuple[str, str], round: int = None) -> SnookerMatch:
+    def lookup_match_by_player_names(
+        self, players=tuple[str, str], round: int = None
+    ) -> SnookerMatch:
         """Lookup match by player names and round number."""
         if round is None:
             round = self.current_round
@@ -336,13 +338,14 @@ class PreparedFixturesSnookerSheet(SnookerSheet):
         Assert that player names according to sheet match the fixture.
         """
         self.assert_match_not_completed(match)
-        fixturrecord_matche: SnookerMatch = self.lookup_match_by_player_names((match.player1, match.player2))
+        fixture: SnookerMatch = self.lookup_match_by_player_names((match.player1, match.player2))
         if not fixture:
             raise MatchNotFound()
         # if player order is reverse of fixture, swap them in the match
         if match.player2 == fixture.player1.name and match.player1 == fixture.player2.name:
             match.player1, match.player2 = match.player2, match.player1
-            match.player1_score, match.player2_score = (match.player2_score, match.player1_score)
+            match.outcome.player1_score = match.outcome.player2_score
+            match.outcome.player2_score = match.outcome.player1_score
         # if players still not matching, raise
         if match.player1 != fixture.player1.name or match.player2 != fixture.player2.name:
             raise MatchFixtureMismatchError("Players do not match those in fixture")
@@ -352,11 +355,15 @@ class PreparedFixturesSnookerSheet(SnookerSheet):
         if sheets_match.winner:
             raise ValueError(f"Match {m_id} (round {match.round}) already has a winner")
         if sheets_match.player1 != match.player1:
-            raise ValueError(f"Player1 mismatch: expected {sheets_match['player1']}, got {match.player1}")
+            raise ValueError(
+                f"Player1 mismatch: expected {sheets_match['player1']}, got {match.player1}"
+            )
         if sheets_match.player2 != match.player2:
-            raise ValueError(f"Player2 mismatch: expected {sheets_match['player2']}, got {match.player2}")
+            raise ValueError(
+                f"Player2 mismatch: expected {sheets_match['player2']}, got {match.player2}"
+            )
 
-        self.record_breaks(match.breaks, date=match.date)
+        self.record_breaks(match.outcome.breaks, date=match.outcome.date)
 
         updates = {
             "date": self.days_since_1900(match.outcome.date),
