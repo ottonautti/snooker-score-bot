@@ -1,7 +1,7 @@
 """Google sheets API client for managing snooker scores."""
 
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import cached_property
 from itertools import combinations
 from typing import List, Tuple
@@ -13,13 +13,8 @@ import pytz
 from app.errors import MatchAlreadyCompleted, MatchFixtureMismatchError, MatchNotFound
 from app.settings import Settings, SixRedSettings
 
-from .models import (
-    MatchFixture,
-    MatchOutcome,
-    SnookerBreak,
-    SnookerMatch,
-    SnookerPlayer,
-)
+from .models import MatchFixture, MatchOutcome, SnookerBreak, SnookerMatch, SnookerPlayer
+from typing import Any, Optional
 
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 SHEETS_DATE_FORMAT = "%d.%m.%Y"
@@ -29,13 +24,24 @@ def get_helsinki_timestamp():
     return datetime.now(pytz.timezone("Europe/Helsinki")).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def try_parse_date(date_str: str):
-    if not date_str:
-        return
-    try:
-        return datetime.strptime(date_str, SHEETS_DATE_FORMAT).date()
-    except (TypeError, ValueError):
+def try_parse_date(value: Any) -> Optional[datetime.date]:
+    """Safely parse a value from a spreadsheet cell into a date object."""
+    if not value:
         return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, int):
+        # Convert from Excel date serial number
+        try:
+            return (datetime(1899, 12, 30) + timedelta(days=value)).date()
+        except (OverflowError, ValueError):
+            return None
+    if isinstance(value, str):
+        try:
+            return datetime.strptime(value, SHEETS_DATE_FORMAT).date()
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 class SnookerSheet:
