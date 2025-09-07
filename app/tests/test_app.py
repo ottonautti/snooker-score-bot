@@ -9,7 +9,7 @@ from requests.auth import HTTPBasicAuth
 from app.errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
 from app.main import SETTINGS, app
 from app.models import InferredMatch
-from app.sheets import SnookerSheet
+from app.sheets import PreparedFixturesSnookerSheet
 
 # Mock settings for testing
 SETTINGS.SHEETID = "1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY"
@@ -32,7 +32,7 @@ def test_client():
 
 @pytest.fixture(scope="class")
 def prepared_sheet():
-    sheet = SnookerSheet(SETTINGS.SHEETID)
+    sheet = PreparedFixturesSnookerSheet(SETTINGS.SHEETID)
     # double check that we are targeting the test sheet
     sheet.reset_fixtures(round=TEST_ROUND)
     yield sheet

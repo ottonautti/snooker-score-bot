@@ -3,7 +3,7 @@ import logging
 import click
 from tabulate import tabulate
 
-from .sheets import SnookerSheet, PreparedFixturesSnookerSheet
+from .sheets import PreparedFixturesSnookerSheet, SnookerSheetBase
 
 
 def _print_players(players):
@@ -27,7 +27,7 @@ def cli(ctx, sheet_id):
 def list_players(ctx):
     """List current players"""
     sheet_id = ctx.obj["sheet_id"]
-    sheet = SnookerSheet(sheet_id)
+    sheet = SnookerSheetBase(sheet_id)
     current_round = sheet.current_round
     players = sheet.current_players
     print(f"Current Round: {current_round}")

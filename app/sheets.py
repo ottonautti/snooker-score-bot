@@ -4,7 +4,8 @@ import os
 from datetime import datetime, timedelta
 from functools import cached_property
 from itertools import combinations
-from typing import List, Tuple
+from typing import Any, List, Optional, Tuple
+from abc import ABC, abstractmethod
 
 import google.auth
 import gspread
@@ -14,7 +15,6 @@ from app.errors import MatchAlreadyCompleted, MatchFixtureMismatchError, MatchNo
 from app.settings import Settings, SixRedSettings
 
 from .models import MatchFixture, MatchOutcome, SnookerBreak, SnookerMatch, SnookerPlayer
-from typing import Any, Optional
 
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 SHEETS_DATE_FORMAT = "%d.%m.%Y"
@@ -44,7 +44,7 @@ def try_parse_date(value: Any) -> Optional[datetime.date]:
     return None
 
 
-class SnookerSheet:
+class SnookerSheetBase(ABC):
     def __init__(self, spreadsheet_id: str):
         credentials, project_id = google.auth.default(
             scopes=[
@@ -205,8 +205,10 @@ class SnookerSheet:
             )
         return match
 
+    @abstractmethod
     def record_match(self, *arg, **kwargs):
-        raise NotImplementedError("This method is implemented in subclasses")
+        """This method must be implemented in subclasses"""
+        pass
 
     def lookup_match_by_player_names(
         self, players=tuple[str, str], round: int = None
@@ -229,7 +231,7 @@ class SnookerSheet:
                 raise MatchAlreadyCompleted()
 
 
-class InsertMatchSnookerSheet(SnookerSheet):
+class InsertMatchSnookerSheet(SnookerSheetBase):
     """Snooker sheet that does not require fixtures to be prepared in advance.
 
     Enables players to join the league at any time and play matches without
@@ -261,7 +263,7 @@ class InsertMatchSnookerSheet(SnookerSheet):
         return match
 
 
-class PreparedFixturesSnookerSheet(SnookerSheet):
+class PreparedFixturesSnookerSheet(SnookerSheetBase):
     """Snooker sheet that uses match fixtures prepared in advance.
 
     Players are known in advance and fixtures are created for each round."""
@@ -349,9 +351,7 @@ class PreparedFixturesSnookerSheet(SnookerSheet):
             raise MatchNotFound()
         # if player order is reverse of fixture, swap them in the match
         if match.player2 == fixture.player1.name and match.player1 == fixture.player2.name:
-            match.player1, match.player2 = match.player2, match.player1
-            match.outcome.player1_score = match.outcome.player2_score
-            match.outcome.player2_score = match.outcome.player1_score
+            match.reverse_players()
         # if players still not matching, raise
         if match.player1 != fixture.player1.name or match.player2 != fixture.player2.name:
             raise MatchFixtureMismatchError("Players do not match those in fixture")
@@ -383,7 +383,7 @@ class PreparedFixturesSnookerSheet(SnookerSheet):
         return match
 
 
-def get_sheet_client(settings: Settings) -> SnookerSheet:
+def get_sheet_client(settings: Settings) -> SnookerSheetBase:
     """Get a Google Sheets client with default credentials."""
     sheet_id = settings.SHEETID
     if isinstance(settings, SixRedSettings):

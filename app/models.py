@@ -106,7 +106,7 @@ class MatchFixture(BaseModel):
     group: str
     player1: SnookerPlayer
     player2: SnookerPlayer
-    format: Optional[MatchFormat] = None
+    format: Optional[MatchFormat] = Field(default=MatchFormats.LEAGUE.value)
 
     @property
     def match_id(self) -> str:
@@ -264,6 +264,19 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
         if link:
             summary += f"\n\nLeague standings: {link}"
         return summary
+
+    def reverse_players(self) -> None:
+        """Reverses the players and scores in the match.
+
+        Need to use __setattr__ in order to avoid tripping validations."""
+        p1 = self.player1
+        object.__setattr__(self, "player1", self.player2)
+        object.__setattr__(self, "player2", p1)
+        if self.outcome:
+            s1 = self.outcome.player1_score
+            object.__setattr__(self.outcome, "player1_score", self.outcome.player2_score)
+            object.__setattr__(self.outcome, "player2_score", s1)
+
 
 
 class SnookerMatchList(BaseModel):

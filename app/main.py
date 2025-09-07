@@ -113,11 +113,13 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
         reply = get_messages().ALREADY_COMPLETED.format(match)
         TWILIO.send_message(msg.sender, reply)
         raise err
-    except ValidationError as err:
+    except Exception as err:
         reply = get_messages().INVALID
-        error_messages: list[str] = [err.get("msg") for err in err.errors()]
         TWILIO.send_message(msg.sender, reply)
-        raise InvalidMatchError(error_messages)
+        if isinstance(err, ValidationError):
+            error_messages: list[str] = [err.get("msg") for err in err.errors()]
+            raise InvalidMatchError(error_messages) from err
+        raise err
 
     return ok_created(dict(message=reply, match=match.model_dump()))
 
@@ -159,7 +161,9 @@ async def get_matches(
     group: str = None,
 ):
     """Returns matches, optionally filtered by query parameters with Basic Auth."""
-    matches = SHEET.get_matches(round=round, group=group, unplayed_only=unplayed, completed_only=completed)
+    matches = SHEET.get_matches(
+        round=round, group=group, unplayed_only=unplayed, completed_only=completed
+    )
     matches_list = SnookerMatchList(round=SHEET.current_round, matches=matches)
     return ORJSONResponse(content=matches_list.model_dump(by_alias=True))
 
@@ -218,7 +222,9 @@ async def handle_exception(req: Request, exc: Exception):
     if isinstance(exc, HTTPException):
         return ORJSONResponse({"detail": exc.detail}, exc.status_code)
     else:
-        return ORJSONResponse({"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return ORJSONResponse(
+            {"detail": "Internal server error"}, status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 # Include the routers in the FastAPI app

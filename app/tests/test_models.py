@@ -115,19 +115,22 @@ def test_deserialize_match_fixture_invalid_players_raises():
         )
 
 
-def test_snooker_match(mock_fixtures):
-    fixture: MatchFixture = mock_fixtures[0]
-    assert fixture.completed is False
+@pytest.fixture()
+def match():
     outcome = MatchOutcome(player1_score=2, player2_score=1, date=datetime.date(2025, 1, 1))
     match = SnookerMatch.from_storage(
-        match_id=fixture.match_id,
-        player1=fixture.player1,
-        player2=fixture.player2,
-        group=fixture.group,
-        round=fixture.round,
+        match_id="123e4567-e89b-12d3-a456-426614174000",
+        player1=SnookerPlayer(name="Doe John", group="L1"),
+        player2=SnookerPlayer(name="Doe Jane", group="L1"),
+        group="L1",
+        round=1,
         format=MatchFormats.LEAGUE.value,
         outcome=outcome,
     )
+    return match
+
+
+def test_snooker_match(mock_fixtures, match):
     md = match.model_dump()
     assert md["completed"] is True
     assert md["player1"] == "Doe John"
@@ -138,6 +141,19 @@ def test_snooker_match(mock_fixtures):
         "date": datetime.date(2025, 1, 1),
         "player1_score": 2,
         "player2_score": 1,
+        "breaks": [],
+    }
+
+
+def test_reverse_players(mock_fixtures, match):
+    match.reverse_players()
+    md = match.model_dump()
+    assert md["player1"] == "Doe Jane"
+    assert md["player2"] == "Doe John"
+    assert md["outcome"] == {
+        "date": datetime.date(2025, 1, 1),
+        "player1_score": 1,
+        "player2_score": 2,
         "breaks": [],
     }
 
@@ -177,6 +193,7 @@ def test_snooker_match_break_by_non_match_player():
             breaks=[SnookerBreak(player=SnookerPlayer(name="Beam Jim", group="L1"), points=100)],
         )
 
+
 def test_snooker_match_summary_default(mock_fixtures):
     # Ensure the fixture has players from same group
     player1 = SnookerPlayer(name="Trump Judd", group="L1")
@@ -184,10 +201,7 @@ def test_snooker_match_summary_default(mock_fixtures):
 
     # Create a valid outcome that gives a win to player1 (frames_to_win is 2 for best-of-3)
     outcome = MatchOutcome(
-        player1_score=2,
-        player2_score=1,
-        date=datetime.date(2025, 1, 1),
-        breaks=[]
+        player1_score=2, player2_score=1, date=datetime.date(2025, 1, 1), breaks=[]
     )
     match = SnookerMatch.from_storage(
         match_id="123e4567-e89b-12d3-a456-426614174000",
@@ -216,7 +230,7 @@ def test_snooker_match_summary_with_breaks(mock_fixtures):
             SnookerBreak(player=player2, points=50),
             SnookerBreak(player=player1, points=100),
             SnookerBreak(player=player1, points=30),
-        ]
+        ],
     )
     match = SnookerMatch.from_storage(
         match_id="123e4567-e89b-12d3-a456-426614174000",
