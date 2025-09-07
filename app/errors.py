@@ -7,8 +7,8 @@ class InvalidContentType(HTTPException):
 
 
 class MatchNotFound(HTTPException):
-    status_code = status.HTTP_404_NOT_FOUND
-    detail = "Match not found"
+    status_code = status.HTTP_400_BAD_REQUEST
+    detail = "Match not found (from fixtures)"
 
     def __init__(self):
         super().__init__(status_code=self.status_code, detail=self.detail)
@@ -26,7 +26,7 @@ class InvalidMatchError(HTTPException):
     status_code = status.HTTP_400_BAD_REQUEST
 
     def __init__(self, detail=None):
-        self.detail = detail or "Invalid match"
+        self.detail = detail or "Invalid match content"
         super().__init__(status_code=self.status_code, detail=self.detail)
 
 
