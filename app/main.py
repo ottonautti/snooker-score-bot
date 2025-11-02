@@ -83,6 +83,15 @@ v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize_v1)], depre
 v2_api = APIRouter(prefix="/api/v2", dependencies=[Depends(basic_auth)])
 
 
+def get_sheets_link() -> str:
+    """Returns the link to the current Google Sheet."""
+    url = SETTINGS.SHEET_URL
+    sheet_id = SHEET.get_current_round_sheet_id()
+    if sheet_id is not None:
+        url = f"{url}?gid={sheet_id}"
+    return url
+
+
 # Twilio SMS Endpoint
 @twilio_router.post("/scores", include_in_schema=False)
 async def post_scores_sms(msg=Depends(parse_twilio_msg)):
@@ -106,7 +115,8 @@ async def post_scores_sms(msg=Depends(parse_twilio_msg)):
             round=SHEET.current_round,
             format=SETTINGS.MATCH_FORMAT,
         )
-        reply = match.summary(link=SETTINGS.SHEET_SHORTLINK)
+        sheets_link = get_sheets_link()
+        reply = match.summary(link=sheets_link)
         SHEET.record_match(match, log=msg.body)
         TWILIO.send_message(msg.sender, reply)
     except MatchAlreadyCompleted as err:

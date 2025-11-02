@@ -28,7 +28,7 @@ class Settings:
     _env = "prod"
     LLM = VertexAI
     SHEETID = "1R2E2bx-0bj33z7jurkFAQED-24mgDQzYYmnm68lk5bY"
-    SHEET_SHORTLINK = "https://tinyurl.com/groovesnk"  # shortened URL to the Google Sheet
+    SHEET_URL = "https://snooker.groovescore.app/sheet"  # shortened URL to the Google Sheet
     API_SECRET = os.getenv("SNOOKER_API_SECRET")
     MATCH_FORMAT = MatchFormats.LEAGUE.value
 

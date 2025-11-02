@@ -85,6 +85,15 @@ class SnookerSheetBase(ABC):
     def current_round(self) -> int:
         return None
 
+    def get_current_round_sheet_id(self) -> str:
+        """Get the sheet ID for the current round sheet."""
+        try:
+            round_sheet = self.gsheet.worksheet(f"ROUND {self.current_round}")
+            pass
+        except gspread.WorksheetNotFound:
+            return None
+        return round_sheet.id
+
     def _unhide_all_columns(self, ws: gspread.Worksheet):
         """Unhide all columns in worksheet.
 
