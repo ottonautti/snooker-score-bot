@@ -8,8 +8,9 @@ from typing import Union
 from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains.llm import LLMChain
 from langchain_core.language_models.llms import BaseLLM
-from app.models import SnookerPlayer, InferredMatch
-from app.settings import Settings
+
+from snooker_score_bot.models import InferredMatch, SnookerPlayer
+from snooker_score_bot.settings import Settings
 
 from . import prompts
 

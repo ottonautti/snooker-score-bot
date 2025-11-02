@@ -1,8 +1,9 @@
 import os
 from typing import Union
+
 from langchain_google_vertexai import VertexAI
 
-from app.models import MatchFormats
+from snooker_score_bot.models import MatchFormats
 
 
 class EngMessages:

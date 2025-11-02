@@ -1,5 +1,5 @@
 !app/llm/fewshots_groove.py
-appScript/
+resources/
 
 *.pyc
 *.pyo

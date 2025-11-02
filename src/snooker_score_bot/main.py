@@ -3,8 +3,8 @@
 import logging
 import os
 import sys
-from typing import Literal
 from datetime import datetime
+from typing import Literal
 
 import google.cloud.logging
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request, status
@@ -13,11 +13,7 @@ from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field, ValidationError
 
-from .errors import (
-    InvalidMatchError,
-    MatchAlreadyCompleted,
-    MatchNotFound,
-)
+from .errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
 from .llm.inference import SnookerScoresLLM, get_llm_client
 from .models import (
     InferredMatch,
@@ -79,7 +75,9 @@ def basic_auth(credentials: HTTPBasicCredentials = Depends(security)):
 twilio_router = APIRouter(prefix="/sms")
 
 # API Routers
-v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True)
+v1_api = APIRouter(
+    prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True
+)
 v2_api = APIRouter(prefix="/api/v2", dependencies=[Depends(basic_auth)])
 
 
@@ -143,7 +141,11 @@ async def get_match_by_id(match_id: str) -> SnookerMatch:
         raise MatchNotFound()
 
 
-@v2_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
+@v2_api.post(
+    "/scores/{match_id}",
+    response_model=SnookerMatch,
+    summary="Report result for a match",
+)
 async def post_scores(body: ScoreRequest, match_id: str):
     """Handles inbound scores via API with Basic Auth"""
     logging.info("Received API scores: %s", body)
@@ -186,7 +188,11 @@ async def get_match(match_id: str):
 
 
 # V1 API Endpoints (Legacy)
-@v1_api.post("/scores/{match_id}", response_model=SnookerMatch, summary="Report result for a match")
+@v1_api.post(
+    "/scores/{match_id}",
+    response_model=SnookerMatch,
+    summary="Report result for a match",
+)
 async def post_scores_v1(body: ScoreRequest, match_id: str):
     """Handles inbound scores via API (legacy)"""
     return await post_scores(body, match_id)

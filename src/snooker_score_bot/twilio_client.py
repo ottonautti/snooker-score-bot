@@ -5,8 +5,8 @@ from collections import namedtuple
 from fastapi import HTTPException, Request, status
 from twilio.rest import Client
 
-from app.errors import InvalidContentType
-from app.settings import Settings
+from snooker_score_bot.errors import InvalidContentType
+from snooker_score_bot.settings import Settings
 
 TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender", "is_test"])
 

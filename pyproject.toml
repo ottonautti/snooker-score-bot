@@ -1,10 +1,8 @@
-[build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
 
 [project]
-name = "groove-snooker"
+name = "snooker-score-bot"
 version = "0.1"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi==0.115.6",
     "google-cloud-logging==3.11.3",
@@ -23,16 +21,15 @@ dependencies = [
     "click",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "python-dotenv",
-    "pytest",
-    "pytest-dotenv",
-    "ruff",
-]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[project.scripts]
-groove-snooker = "app.cli:cli"
+[tool.hatch.build.targets.wheel]
+packages = ["src/snooker_score_bot"]
+
+[project.optional-dependencies]
+dev = ["python-dotenv", "pytest", "pytest-dotenv", "ruff", "freezegun"]
 
 [tool.ruff]
 line-length = 119

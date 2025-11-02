@@ -5,7 +5,7 @@ from itertools import permutations
 import pytest
 from pydantic import ValidationError
 
-from app.models import (
+from snooker_score_bot.models import (
     InferredMatch,
     MatchFixture,
     MatchFormat,

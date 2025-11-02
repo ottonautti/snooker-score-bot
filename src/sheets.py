@@ -1,20 +1,26 @@
 """Google sheets API client for managing snooker scores."""
 
 import os
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from functools import cached_property
 from itertools import combinations
 from typing import Any, List, Optional, Tuple
-from abc import ABC, abstractmethod
 
 import google.auth
 import gspread
 import pytz
 
-from app.errors import MatchAlreadyCompleted, MatchFixtureMismatchError, MatchNotFound
-from app.settings import Settings, SixRedSettings
+from snooker_score_bot.errors import MatchAlreadyCompleted, MatchFixtureMismatchError, MatchNotFound
+from snooker_score_bot.settings import Settings, SixRedSettings
 
-from .models import MatchFixture, MatchOutcome, SnookerBreak, SnookerMatch, SnookerPlayer
+from .models import (
+    MatchFixture,
+    MatchOutcome,
+    SnookerBreak,
+    SnookerMatch,
+    SnookerPlayer,
+)
 
 CURDIR = os.path.dirname(os.path.abspath(__file__))
 SHEETS_DATE_FORMAT = "%d.%m.%Y"
@@ -79,7 +85,11 @@ class SnookerSheetBase(ABC):
         players_rows = self.gsheet.values_get("nr_currentPlayers").get("values")
         if not players_rows:
             raise RuntimeError("No players found in spreadsheet")
-        return [SnookerPlayer(name=row[0], group=row[1]) for row in players_rows if len(row) >= 2]
+        return [
+            SnookerPlayer(name=row[0], group=row[1])
+            for row in players_rows
+            if len(row) >= 2
+        ]
 
     @property
     def current_round(self) -> int:
@@ -108,7 +118,9 @@ class SnookerSheetBase(ABC):
         # prompt user for confirmation when doing this for the first time
         sheet = self.matches_sheet
         if not force:
-            print(f"Are you sure you want to clear all results from {self.spreadsheet_id}?")
+            print(
+                f"Are you sure you want to clear all results from {self.spreadsheet_id}?"
+            )
             if input("Type 'yes' to confirm: ") != "yes":
                 return False
         self._unhide_all_columns(sheet)
@@ -146,7 +158,11 @@ class SnookerSheetBase(ABC):
         return True
 
     def get_matches(
-        self, round: int = None, group: str = None, unplayed_only=False, completed_only=False
+        self,
+        round: int = None,
+        group: str = None,
+        unplayed_only=False,
+        completed_only=False,
     ) -> List[SnookerMatch]:
         if not round:
             round = self.current_round
@@ -171,8 +187,12 @@ class SnookerSheetBase(ABC):
                 match_id=fixture.get("id"),
                 round=fixture.get("round"),
                 group=fixture.get("group"),
-                player1=SnookerPlayer(name=fixture.get("player1"), group=fixture.get("group")),
-                player2=SnookerPlayer(name=fixture.get("player2"), group=fixture.get("group")),
+                player1=SnookerPlayer(
+                    name=fixture.get("player1"), group=fixture.get("group")
+                ),
+                player2=SnookerPlayer(
+                    name=fixture.get("player2"), group=fixture.get("group")
+                ),
                 outcome=outcome,
             )
             matches.append(match)
@@ -235,7 +255,9 @@ class SnookerSheetBase(ABC):
 
     def assert_match_not_completed(self, match: SnookerMatch):
         """Assert that match is not found in the sheet."""
-        if match := self.lookup_match_by_player_names((match.player1.name, match.player2.name)):
+        if match := self.lookup_match_by_player_names(
+            (match.player1.name, match.player2.name)
+        ):
             if match.completed:
                 raise MatchAlreadyCompleted()
 
@@ -355,14 +377,22 @@ class PreparedFixturesSnookerSheet(SnookerSheetBase):
         Assert that player names according to sheet match the fixture.
         """
         self.assert_match_not_completed(match)
-        fixture: SnookerMatch = self.lookup_match_by_player_names((match.player1, match.player2))
+        fixture: SnookerMatch = self.lookup_match_by_player_names(
+            (match.player1, match.player2)
+        )
         if not fixture:
             raise MatchNotFound()
         # if player order is reverse of fixture, swap them in the match
-        if match.player2 == fixture.player1.name and match.player1 == fixture.player2.name:
+        if (
+            match.player2 == fixture.player1.name
+            and match.player1 == fixture.player2.name
+        ):
             match.reverse_players()
         # if players still not matching, raise
-        if match.player1 != fixture.player1.name or match.player2 != fixture.player2.name:
+        if (
+            match.player1 != fixture.player1.name
+            or match.player2 != fixture.player2.name
+        ):
             raise MatchFixtureMismatchError("Players do not match those in fixture")
 
         m_id = fixture.match_id

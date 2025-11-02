@@ -1,4 +1,4 @@
-from app.models import SnookerPlayer
+from snooker_score_bot.models import SnookerPlayer
 
 
 class FewShotData:

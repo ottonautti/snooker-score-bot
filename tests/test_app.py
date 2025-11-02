@@ -6,15 +6,14 @@ import pytest
 from fastapi.testclient import TestClient
 from requests.auth import HTTPBasicAuth
 
-from app.errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
-from app.main import SETTINGS, app
-from app.models import InferredMatch
-from app.sheets import PreparedFixturesSnookerSheet
+from snooker_score_bot.errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
+from snooker_score_bot.main import SETTINGS, app
+from snooker_score_bot.models import InferredMatch
+from snooker_score_bot.sheets import PreparedFixturesSnookerSheet
 
 # Mock settings for testing
-SETTINGS.SHEETID = "1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY"
+SHEETID = "1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY"
 TEST_ROUND = 3
-
 
 
 @pytest.fixture(autouse=True)
@@ -32,12 +31,13 @@ def test_client():
 
 @pytest.fixture(scope="class")
 def prepared_sheet():
-    sheet = PreparedFixturesSnookerSheet(SETTINGS.SHEETID)
+    sheet = PreparedFixturesSnookerSheet(SHEETID)
     # double check that we are targeting the test sheet
     sheet.reset_fixtures(round=TEST_ROUND)
     yield sheet
     # Any cleanup tasks after each test
     pass
+
 
 @freezegun.freeze_time("2025-10-01")
 class TestSmsRoutes:
@@ -61,7 +61,7 @@ class TestSmsRoutes:
             winner="Virtanen Aatos",
             group="L1",
         )
-        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
+        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post("/sms/scores", data=self.TEST_SMS)
             assert response.status_code == 201
             assert "message" in response.json()
@@ -83,7 +83,7 @@ class TestSmsRoutes:
             winner="Virtanen Aatos",
             group="L1",
         )
-        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
+        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post(
                 "/sms/scores",
                 data=self.TEST_SMS,
@@ -99,7 +99,7 @@ class TestSmsRoutes:
             winner="Virtanen Aatos",
             group="L1",
         )
-        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
+        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post(
                 "/sms/scores",
                 data=self.TEST_SMS,
@@ -118,11 +118,12 @@ class TestSmsRoutes:
             winner="Biden Joe",
             group="L1",
         )
-        with patch("app.main.SnookerScoresLLM.infer", return_value=mock_inference):
+        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
             response = test_client.post("/sms/scores", data=self.TEST_SMS)
             assert response.status_code == MatchNotFound.status_code
             detail = response.json().get("detail")
             assert detail == MatchNotFound.detail
+
 
 @freezegun.freeze_time("2025-10-01")
 class TestApiRoutes:

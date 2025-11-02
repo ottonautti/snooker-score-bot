@@ -1,21 +1,18 @@
-# Use the official lightweight Python image.
-# https://hub.docker.com/_/python
-FROM python:3.11-slim
+# 1. Base Stage
+FROM python:3.12-slim
 
 # Allow statements and log messages to immediately appear in the logs
-ENV PYTHONUNBUFFERED True
+ENV PYTHONUNBUFFERED=True
 
-# Copy local code to the container image.
-ENV APP_HOME /app
-WORKDIR $APP_HOME
-COPY . ./
+# Copy only dependency-related files first to leverage Docker layer caching
+COPY pyproject.toml ./
 
-# Install production dependencies.
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir hatchling && \
+    pip install --no-cache-dir .
 
-# Run the web service on container startup. Here we use the gunicorn
-# webserver, with one worker process and 8 threads.
-# For environments with multiple CPU cores, increase the number of workers
-# to be equal to the cores available.
-# Timeout is set to 0 to disable the timeouts of the workers to allow Cloud Run to handle instance scaling.
-CMD exec uvicorn --port $PORT --host 0.0.0.0 app.main:app --workers 1
+# Copy the rest of the application source code (only whats isnide src/)
+COPY src/ ./
+
+# Run the application
+CMD ["/bin/sh", "-c", "exec uvicorn --port $PORT --host 0.0.0.0 snooker_score_bot.main:app --workers 1"]
