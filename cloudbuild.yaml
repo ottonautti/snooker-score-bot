@@ -27,8 +27,8 @@ steps:
       - --image=$_AR_HOSTNAME/$PROJECT_ID/cloud-run-source-deploy/$_REPO_NAME/$_SERVICE_NAME:$BUILD_ID
       - --labels=managed-by=gcp-cloud-build-deploy-cloud-run,commit-sha=$BUILD_ID,gcb-build-id=$BUILD_ID,gcb-trigger-id=$_TRIGGER_ID
       - '--region=$_DEPLOY_REGION'
-      - '--set-env-vars=NODE_ENV=$_NODE_ENV'  # SET TOURNAMENT TYPE
-      - '--set-secrets=TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,SNOOKER_API_SECRET=SNOOKER_API_SECRET:latest'
+      - '--set-env-vars=NODE_ENV=$_NODE_ENV,PUSHOVER_ENABLED=1'  # TODO: SET TOURNAMENT TYPE HERE
+      - '--set-secrets=TWILIO_AUTHTOKEN=twilio-authtoken:latest,TWILIO_ACCOUNTSID=twilio-accountsid:latest,TWILIO_FROM=twilio-from:latest,SNOOKER_API_SECRET=SNOOKER_API_SECRET:latest,PUSHOVER_API_TOKEN=PUSHOVER_API_TOKEN:latest,PUSHOVER_USER_KEY=PUSHOVER_USER_KEY:latest'
       - '--service-account=$_SERVICE_ACCOUNT'
       - '--max-instances=1'
       - '--quiet'

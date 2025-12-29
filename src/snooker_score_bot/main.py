@@ -23,6 +23,7 @@ from .models import (
     SnookerMatch,
     SnookerMatchList,
 )
+from .monitoring import get_pushover_client
 from .settings import get_messages, get_settings
 from .sheets import get_sheet_client
 from .twilio_client import get_twilio_client, parse_twilio_msg
@@ -33,6 +34,7 @@ SETTINGS = get_settings()
 TWILIO = get_twilio_client(SETTINGS)
 SHEET = get_sheet_client(SETTINGS)
 LLM = get_llm_client(SETTINGS)
+PUSHOVER = get_pushover_client(SETTINGS)
 
 
 def setup_logging():
@@ -71,13 +73,46 @@ def basic_auth(credentials: HTTPBasicCredentials = Depends(security)):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Unauthorized")
 
 
+async def monitor_sms_request(request: Request):
+    """Dependency to monitor SMS requests via Pushover."""
+    sms_body = None
+    error_occurred = None
+
+    # Capture SMS body from request
+    if request.method == "POST":
+        try:
+            form_data = await request.form()
+            sms_body = form_data.get("Body", "<no body>")
+        except Exception:
+            sms_body = "<parse error>"
+
+    # Yield to process the request
+    try:
+        yield
+    except Exception as exc:
+        error_occurred = getattr(exc, "detail", str(exc))
+        # Send failure notification
+        if PUSHOVER.enabled:
+            await PUSHOVER.send_notification(
+                message=f"SMS: {sms_body}\nError: {str(error_occurred)}",
+                title="❌ SMS Failed",
+                priority=1,
+            )
+        raise
+    else:
+        # Send success notification
+        if PUSHOVER.enabled:
+            await PUSHOVER.send_notification(
+                message=f"SMS: {sms_body}",
+                title="✅ SMS Processed",
+            )
+
+
 # Targeted by Twilio webhooks
-twilio_router = APIRouter(prefix="/sms")
+twilio_router = APIRouter(prefix="/sms", dependencies=[Depends(monitor_sms_request)])
 
 # API Routers
-v1_api = APIRouter(
-    prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True
-)
+v1_api = APIRouter(prefix="/api/v1", dependencies=[Depends(authorize_v1)], deprecated=True)
 v2_api = APIRouter(prefix="/api/v2", dependencies=[Depends(basic_auth)])
 
 

@@ -32,6 +32,9 @@ class Settings:
     SHEET_URL = "https://snooker.groovescore.app/sheet"  # shortened URL to the Google Sheet
     API_SECRET = os.getenv("SNOOKER_API_SECRET")
     MATCH_FORMAT = MatchFormats.LEAGUE.value
+    PUSHOVER_USER_KEY = os.getenv("PUSHOVER_USER_KEY", "")
+    PUSHOVER_API_TOKEN = os.getenv("PUSHOVER_API_TOKEN", "")
+    PUSHOVER_ENABLED = os.getenv("PUSHOVER_ENABLED", "1") == "1"
 
 
 class SixRedSettings(Settings):
