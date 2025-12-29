@@ -76,8 +76,8 @@ class MatchFormat(BaseModel):
 
 
 class MatchFormats(Enum):
-    LEAGUE = MatchFormat(best_of=3, num_reds=15)
-    SIXRED = MatchFormat(best_of=5, num_reds=6)
+    LEAGUE = {"best_of": 3, "num_reds": 15}
+    SIXRED = {"best_of": 5, "num_reds": 6}
 
 
 class MatchOutcome(BaseModel):
@@ -106,7 +106,7 @@ class MatchFixture(BaseModel):
     group: str
     player1: SnookerPlayer
     player2: SnookerPlayer
-    format: Optional[MatchFormat] = Field(default=MatchFormats.LEAGUE.value)
+    format: MatchFormat = Field(default=MatchFormats.LEAGUE.value)
 
     @property
     def match_id(self) -> str:
@@ -276,7 +276,6 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
             s1 = self.outcome.player1_score
             object.__setattr__(self.outcome, "player1_score", self.outcome.player2_score)
             object.__setattr__(self.outcome, "player2_score", s1)
-
 
 
 class SnookerMatchList(BaseModel):
