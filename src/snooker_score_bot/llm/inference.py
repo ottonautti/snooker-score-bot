@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-from typing import Union
 
 from langchain.callbacks import StdOutCallbackHandler
 from langchain.chains.llm import LLMChain
@@ -56,4 +55,4 @@ class SnookerScoresLLM:
 
 def get_llm_client(settings: Settings) -> SnookerScoresLLM:
     """Get the LLM client based on the settings."""
-    return SnookerScoresLLM(llm=settings.LLM)
+    return SnookerScoresLLM(llm=settings.LLM_PROVIDER, model_name=settings.LLM_MODEL)
