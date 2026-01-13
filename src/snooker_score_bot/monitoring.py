@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from typing import Optional
 
 import httpx
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
 
 
 @dataclass
@@ -87,7 +85,7 @@ class PushoverClient:
                 response.raise_for_status()
             logging.info("Pushover notification sent successfully")
             return True
-        except:
+        except httpx.HTTPError as e:
             logging.exception("Error sending Pushover notification: %s", e)
             return False
 
