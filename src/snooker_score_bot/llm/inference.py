@@ -21,11 +21,11 @@ stdout_handler = StdOutCallbackHandler()
 class SnookerScoresLLM:
     """LLM client for extracting snooker scores from messages"""
 
-    def __init__(self, llm: BaseLLM = None, model_name=None, prompt=None):
+    def __init__(self, llm: BaseLLM = None, model_name=None, prompt=None, **kwargs):
         """Initialize the LLM client."""
         if not issubclass(llm, BaseLLM):
             raise TypeError(f"Expected llm to be a BaseLLM instance, got {type(llm)}")
-        self.llm = llm(model_name=model_name)
+        self.llm = llm(model_name=model_name, **kwargs)
         self.verbose = bool(os.getenv("LANGCHAIN_VERBOSE", False))
         if not prompt:
             prompt = prompts.get_prompt()
@@ -55,4 +55,8 @@ class SnookerScoresLLM:
 
 def get_llm_client(settings: Settings) -> SnookerScoresLLM:
     """Get the LLM client based on the settings."""
-    return SnookerScoresLLM(llm=settings.LLM_PROVIDER, model_name=settings.LLM_MODEL)
+    return SnookerScoresLLM(
+        llm=settings.LLM_PROVIDER,
+        model_name=settings.LLM_MODEL,
+        location=settings.LLM_LOCATION,
+    )
