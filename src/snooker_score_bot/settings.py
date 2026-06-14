@@ -41,8 +41,8 @@ class Settings:
 
 
 class SixRedSettings(Settings):
-    SHEETID = "16MlIIRn1WSLHpdGeArKB2-NzyN68zg4qXaU0UWGVUYs"
-    SHEET_SHORTLINK = "tinyurl.com/gjss25"  # shortened URL to the Google Sheet
+    SHEETID = "1Huic8_J3Zv7MK3KhpqUeVaekqbgemw-hmYPZTZ7tr84"
+    SHEET_SHORTLINK = "tinyurl.com/gjss26"  # shortened URL to the Google Sheet
     MATCH_FORMAT = MatchFormats.SIXRED.value
 
 class TestSettings(Settings):
