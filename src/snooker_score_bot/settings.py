@@ -31,7 +31,7 @@ class Settings:
     LLM_MODEL = "gemini-2.5-flash"
     # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#global-endpoint
     LLM_LOCATION = "global"
-    SHEETID = "1R2E2bx-0bj33z7jurkFAQED-24mgDQzYYmnm68lk5bY"
+    SHEETID = "1hu2_rqOObQ4UDGmPEmXKih67kJJZAD4FDLjQBotBbe0"
     SHEET_URL = "https://snooker.groovescore.app/sheet"  # shortened URL to the Google Sheet
     API_SECRET = os.getenv("SNOOKER_API_SECRET")
     MATCH_FORMAT = MatchFormats.LEAGUE.value
