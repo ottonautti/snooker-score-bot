@@ -28,7 +28,7 @@ messages = get_messages("fin")
 class Settings:
     _env = "prod"
     LLM_PROVIDER = VertexAI
-    LLM_MODEL = "gemini-2.5-flash"
+    LLM_MODEL = "gemini-3.5-flash-lite"
     # https://docs.cloud.google.com/vertex-ai/generative-ai/docs/learn/locations#global-endpoint
     LLM_LOCATION = "global"
     SHEETID = "1hu2_rqOObQ4UDGmPEmXKih67kJJZAD4FDLjQBotBbe0"
