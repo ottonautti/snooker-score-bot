@@ -17,6 +17,8 @@ class MockFewShotData(FewShotData):
         SnookerPlayer(name="Tuomi Kari", group="L2"),
         SnookerPlayer(name="Jauhiainen Mari", group="L2"),
         SnookerPlayer(name="Lankinen Elisabet", group="L2"),
+        SnookerPlayer(name="Laine Mika", group="L2"),
+        SnookerPlayer(name="Nieminen Jarmo", group="L2"),
         SnookerPlayer(name="Lahti Mika", group="L3"),
         SnookerPlayer(name="Kari Yrjö", group="L3"),
         SnookerPlayer(name="Sjöblom Aukusti", group="L3"),
@@ -28,108 +30,60 @@ class MockFewShotData(FewShotData):
     ]
 
     @property
+    def players_list(self) -> str:
+        """The player list all examples refer to, formatted as in the prompt."""
+        return "\n".join(p.__llm_str__() for p in self.players)
+
+    def _example(self, passage: str, options1, options2, score1, score2, breaks=()) -> dict:
+        output = {
+            "players": [{"options": list(options1)}, {"options": list(options2)}],
+            "player1_score": score1,
+            "player2_score": score2,
+            "breaks": [{"player": p, "points": n} for p, n in breaks],
+        }
+        return {"passage": passage, "output": to_json(output)}
+
+    @property
     def examples(self):
+        """Every name in an output must appear in the player list."""
         return [
-            {
-                "known_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
-                "output": to_json(
-                    {
-                        "group": "L1",
-                        "player1": "Huhtala Katja",
-                        "player2": "Andersson Leila",
-                        "player1_score": 2,
-                        "player2_score": 1,
-                        "winner": "Huhtala Katja",
-                        "breaks": [
-                            {
-                                "player": "Huhtala Katja",
-                                "points": 45,
-                            }
-                        ],
-                    }
-                ),
-            },
-            {
-                "known_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Sinikka - Joonas 2-0",
-                "output": to_json(
-                    {
-                        "group": "L2",
-                        "player1": "Laaksonen Sinikka",
-                        "player2": "Tuomi Joonas",
-                        "player1_score": 2,
-                        "player2_score": 0,
-                        "winner": "Laaksonen Sinikka",
-                        "breaks": [],
-                    }
-                ),
-            },
-            {
-                "known_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Valtteri v Anneli 2-1, breaks: Anneli 107, 101, Valtteri 52",
-                "output": to_json(
-                    {
-                        "group": "L4",
-                        "player1": "Pulkkinen Valtteri",
-                        "player2": "Tähtinen Anneli",
-                        "player1_score": 2,
-                        "player2_score": 1,
-                        "winner": "Pulkkinen Valtteri",
-                        "breaks": [
-                            {
-                                "player": "Tähtinen Anneli",
-                                "points": 107,
-                            },
-                            {
-                                "player": "Tähtinen Anneli",
-                                "points": 101,
-                            },
-                            {
-                                "player": "Pulkkinen Valtteri",
-                                "points": 52,
-                            },
-                        ],
-                    }
-                ),
-            },
-            {
-                "known_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Aukusti v Yrjö 2-1, breikit Aukusti 25, Yrjö 18",
-                "output": to_json(
-                    {
-                        "group": "L3",
-                        "player1": "Sjöblom Aukusti",
-                        "player2": "Väisänen Yrjö",
-                        "player1_score": 2,
-                        "player2_score": 1,
-                        "winner": "Sjöblom Aukusti",
-                        "breaks": [
-                            {
-                                "player": "Sjöblom Aukusti",
-                                "points": 25,
-                            },
-                            {
-                                "player": "Väisänen Yrjö",
-                                "points": 18,
-                            },
-                        ],
-                    }
-                ),
-            },
-            {
-                "known_players": "\n".join([str(plr) for plr in self.players]),
-                "passage": "Ahonen 2 - Tero 1, ei breikkejä",
-                "output": to_json(
-                    {
-                        "group": "L4",
-                        "player1": "Tähtinen Anneli",
-                        "player2": "Saarela Tero",
-                        "player1_score": 2,
-                        "player2_score": 1,
-                        "winner": "Tähtinen Anneli",
-                        "breaks": [],
-                    }
-                ),
-            },
+            # surnames; a break by the first person
+            self._example(
+                "Huhtala - Andersson 2-1. Breikki 45, Huhtala.",
+                ["Huhtala Katja"],
+                ["Andersson Leila"],
+                2,
+                1,
+                [(1, 45)],
+            ),
+            # "Kari" is Tuomi Kari's first name and Kari Yrjö's surname: list both
+            self._example("Sinikka - Kari 0-2", ["Laaksonen Sinikka"], ["Tuomi Kari", "Kari Yrjö"], 0, 2),
+            # nickname
+            self._example(
+                "Valtsu v Anneli 2-1, breaks: Anneli 107, 101, Valtsu 52",
+                ["Pulkkinen Valtteri"],
+                ["Tähtinen Anneli"],
+                2,
+                1,
+                [(2, 107), (2, 101), (1, 52)],
+            ),
+            # inflected names, loser mentioned first
+            self._example(
+                "Aukusti hävisi Yrjölle 1-2, breikit Aukusti 25, Yrjö 18",
+                ["Sjöblom Aukusti"],
+                ["Kari Yrjö"],
+                1,
+                2,
+                [(1, 25), (2, 18)],
+            ),
+            # typo, score after each name
+            self._example("Huuskonen 0 - Suhnen 2, ei breikkejä", ["Huuskonen Alexandra"], ["Suhonen Tanja"], 0, 2),
+            # first names shared by several players: list them all
+            self._example("Mika - Jarmo 2-0", ["Laine Mika", "Lahti Mika"], ["Nieminen Jarmo", "Kivinen Jarmo"], 2, 0),
+            # an initial picks one of the players sharing a first name
+            self._example("Jarmo K - Aukusti 2-0", ["Kivinen Jarmo"], ["Sjöblom Aukusti"], 2, 0),
+            # a similar-looking surname is a different player: only Lahti, not Laine
+            self._example("Lahti - Aukusti 0-2", ["Lahti Mika"], ["Sjöblom Aukusti"], 0, 2),
+            # nobody in the list
+            self._example("Pekka - Matti 2-0", [], [], 2, 0),
         ]
