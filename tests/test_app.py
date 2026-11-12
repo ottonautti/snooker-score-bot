@@ -1,279 +1,180 @@
-from copy import deepcopy
-from unittest.mock import patch
+"""The FastAPI app, with its services replaced by an in-memory league and fakes: no network access needed."""
+
+from unittest.mock import AsyncMock, MagicMock
 
 import freezegun
 import pytest
 from fastapi.testclient import TestClient
 from requests.auth import HTTPBasicAuth
 
-from snooker_score_bot.errors import InvalidMatchError, MatchAlreadyCompleted, MatchNotFound
-from snooker_score_bot.main import SETTINGS, app
-from snooker_score_bot.models import InferredMatch
-from snooker_score_bot.sheets import PreparedFixturesSnookerSheet
+from snooker_score_bot.errors import MatchAlreadyCompleted
+from snooker_score_bot.main import Services, app, get_services
+from snooker_score_bot.monitoring import PushoverClient
+from snooker_score_bot.settings import TestSettings
+from tests.test_league import find, make_league
+from tests.test_sms import jani_beats_mikko, llm_reading
 
-# Mock settings for testing
-SHEETID = "1JUicaU5OHi8HR49j9O4ex_rv3veAvadkaoeuEOw6ucY"
-TEST_ROUND = 3
+API_SECRET = "test-secret"
 
 
 @pytest.fixture(autouse=True)
-def no_requests(monkeypatch):
-    """The tests here should not make any external requests."""
-    monkeypatch.delattr("langchain.chains.base.Chain.invoke")
+def frozen_today():
+    with freezegun.freeze_time("2026-11-12 18:00:00"):
+        yield
 
 
-@pytest.fixture(scope="class")
-def test_client():
-    test_client = TestClient(app, raise_server_exceptions=True)
-    test_client.auth = HTTPBasicAuth(username="", password=SETTINGS.API_SECRET)
-    return test_client
+@pytest.fixture
+def services():
+    settings = TestSettings()
+    settings.API_SECRET = API_SECRET
+    league = make_league()
+    league.generate_fixtures(round=2)
+    pushover = PushoverClient(user_key="u", api_token="t", enabled=True)
+    pushover.send_notification = AsyncMock()
+    return Services(settings=settings, league=league, llm=jani_beats_mikko(), twilio=MagicMock(), pushover=pushover)
 
 
-@pytest.fixture(scope="class")
-def prepared_sheet():
-    sheet = PreparedFixturesSnookerSheet(SHEETID)
-    # double check that we are targeting the test sheet
-    sheet.reset_fixtures(round=TEST_ROUND)
-    yield sheet
-    # Any cleanup tasks after each test
-    pass
+@pytest.fixture
+def client(services):
+    app.dependency_overrides[get_services] = lambda: services
+    # not used as a context manager, so the lifespan (which connects to the real services) doesn't run
+    client = TestClient(app, raise_server_exceptions=True)
+    client.auth = HTTPBasicAuth(username="", password=API_SECRET)
+    yield client
+    app.dependency_overrides.clear()
 
 
-@freezegun.freeze_time("2025-10-01")
-class TestSmsRoutes:
-    """Tests for POST /sms/scores.
-
-    This path involves inference by LLM about the match result from the SMS message.
-    """
-
-    TEST_SMS = {
-        "Body": "Aatos voitti Joonaksen 2-1",
-        "From": "+1234567890",
-    }
-
-    def test_sms_score_valid_inference(self, test_client, monkeypatch, prepared_sheet):
-        """Test for valid inference by LLM"""
-        mock_inference = InferredMatch(
-            player1="Virtanen Aatos",
-            player2="Mäkinen Joonas",
-            player1_score=2,
-            player2_score=1,
-            winner="Virtanen Aatos",
-            group="L1",
-        )
-        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
-            response = test_client.post("/sms/scores", data=self.TEST_SMS)
-            assert response.status_code == 201
-            assert "message" in response.json()
-            assert "match" in response.json()
-
-            # attempting to post score for the same match a second time should raise a 409 Conflict
-            response = test_client.post("/sms/scores", data=self.TEST_SMS)
-            assert response.status_code == MatchAlreadyCompleted.status_code
-            detail = response.json().get("detail")
-            assert detail == MatchAlreadyCompleted.detail
-
-    def test_sms_score_valid_inference_reversed_player_order(self, prepared_sheet, test_client):
-        """Test for when the player order is reversed in the LLM inference"""
-        mock_inference = InferredMatch(
-            player1="Mäkinen Joonas",
-            player2="Virtanen Aatos",
-            player1_score=1,
-            player2_score=2,
-            winner="Virtanen Aatos",
-            group="L1",
-        )
-        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
-            response = test_client.post(
-                "/sms/scores",
-                data=self.TEST_SMS,
-            )
-
-    def test_sms_score_llm_infers_nonexisting_match(self, prepared_sheet, test_client):
-        """InvalidMatchError should be raised as players are from different groups"""
-        mock_inference = InferredMatch(
-            player1="Virtanen Aatos",
-            player2="Rantanen Lauri",
-            player1_score=2,
-            player2_score=1,
-            winner="Virtanen Aatos",
-            group="L1",
-        )
-        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
-            response = test_client.post(
-                "/sms/scores",
-                data=self.TEST_SMS,
-            )
-            assert response.status_code == MatchNotFound.status_code
-            detail = response.json().get("detail")
-            assert detail == MatchNotFound.detail
-
-    def test_sms_score_llm_hallucinates_players(self, prepared_sheet, test_client):
-        """MatchNotFound should be raised as players are not found in the fixtures"""
-        mock_inference = InferredMatch(
-            player1="Biden Joe",
-            player2="Trump Donald",
-            player1_score=2,
-            player2_score=1,
-            winner="Biden Joe",
-            group="L1",
-        )
-        with patch("snooker_score_bot.main.SnookerScoresLLM.infer", return_value=mock_inference):
-            response = test_client.post("/sms/scores", data=self.TEST_SMS)
-            assert response.status_code == MatchNotFound.status_code
-            detail = response.json().get("detail")
-            assert detail == MatchNotFound.detail
+def sms(client, body):
+    return client.post("/sms/scores", data={"Body": body, "From": "+1234567890"})
 
 
-@freezegun.freeze_time("2025-10-01")
-class TestApiRoutes:
-    """Tests for POST /api/v*/scores/{match_id}
-
-    Tests for posting scores to a match twice:
-    1. First time should succeed as match has no scores yet
-    2. Second time should fail with 409 Conflict as match already has scores
-    """
-
-    API_VERSION = "v2"
-    path = f"/api/{API_VERSION}"
-    fixtures = None
-
-    @classmethod
-    def test_get_all_unplayed_matches(cls, prepared_sheet, test_client):
-        response = test_client.get(f"{cls.path}/matches?unplayed=true")
-        assert response.status_code == 200
-        data = response.json()
-        assert "round" in data
-        assert "matches" in data
-        # let's cache the fixtures for later tests, fetching them is expensive
-        cls.fixtures = data["matches"]
-        if not cls.fixtures:
-            raise ValueError("No unplayed matches found in the test sheet")
-        assert len(cls.fixtures) > 0
-        assert all(fixture["state"] == "unplayed" for fixture in cls.fixtures)
-
-    def test_get_unplayed_match(self, prepared_sheet, test_client):
-        """Test for getting a single match, before it's outcome has been recorded."""
-        if self.fixtures is None:
-            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
-        fixture = self.fixtures[0]
-        match_id = fixture["id"]
-        response = test_client.get(f"{self.path}/matches/{match_id}")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["state"] == "unplayed"
-        assert data["completed"] is False
-        assert fixture["player1"] == data["player1"]
-        assert fixture["player2"] == data["player2"]
-        assert data["winner"] is None
-
-    def test_post_scores_and_get(self, prepared_sheet, test_client):
-        """Test for posting scores to a match"""
-        if self.fixtures is None:
-            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
-        fixture = self.fixtures[0]
-        match_id = fixture["id"]
-        response = test_client.post(
-            f"{self.path}/scores/{match_id}", json={"player1_score": 2, "player2_score": 1, "breaks": []}
-        )
-        post_response = response.json()
+class TestSms:
+    def test_recorded_then_already_played(self, client, services):
+        response = sms(client, "Hauta-aho - Neuvonen 2-0")
         assert response.status_code == 201
-        assert fixture["player1"] == post_response["player1"]
-        assert fixture["player2"] == post_response["player2"]
+        assert response.json()["match"]["winner"] == "Hauta-aho Jani"
+        services.twilio.send_message.assert_called_once_with("+1234567890", response.json()["message"])
+        assert services.pushover.send_notification.await_args.kwargs["title"] == "✅ SMS Processed"
 
-        # attempting to post score for the same match a second time should raise a 409 Conflict
-        response = test_client.post(
-            f"{self.path}/scores/{match_id}", json={"player1_score": 2, "player2_score": 1, "breaks": []}
-        )
-        assert response.status_code == 409
-        assert "detail" in response.json()
-        assert response.json()["detail"] == "Match already completed"
-
-        # get the match again to check that the outcome was
-        response = test_client.get(f"{self.path}/matches/{match_id}")
+        # a rejected message is answered with 200: an error status makes Twilio retry via the fallback URL
+        response = sms(client, "Hauta-aho - Neuvonen 2-0")
         assert response.status_code == 200
-        get_response = response.json()
+        assert response.json()["error"] == {"type": "MatchAlreadyCompleted", "detail": MatchAlreadyCompleted.detail}
+        assert "already been played" in response.json()["message"]
 
-        # apart from outcome.breaks and outcome.date, the responses should be identical
-        post_outcome = post_response.pop("outcome")
-        get_outcome = get_response.pop("outcome")
-        assert post_response == get_response
-        assert post_outcome["player1_score"] == get_outcome["player1_score"]
-        assert post_outcome["player2_score"] == get_outcome["player2_score"]
+    def test_rejected_message_gets_one_reply_and_an_alert(self, client, services):
+        services.llm = llm_reading([], [])  # nobody in the list
+        response = sms(client, "Pekka - Matti 2-0")
+        assert response.status_code == 200
+        assert response.json()["error"]["type"] == "UnknownPlayersError"
+        services.twilio.send_message.assert_called_once_with("+1234567890", response.json()["message"])
+        services.pushover.send_notification.assert_awaited_once()
+        assert services.pushover.send_notification.await_args.kwargs["title"] == "❌ SMS Failed"
 
-    def test_post_scores_with_valid_breaks(self, prepared_sheet, test_client):
-        """Test for posting scores to a match with breaks"""
-        if self.fixtures is None:
-            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
-        target_fixture = self.fixtures[1]
-        match_id = target_fixture["id"]
-        response = test_client.post(
-            f"{self.path}/scores/{match_id}",
-            json={
-                "player1_score": 2,
-                "player2_score": 1,
-                "breaks": [
-                    {"player": "player1", "points": 50},
-                    {"player": "player2", "points": 30},
-                ],
-            },
-        )
-        data = response.json()
+    def test_crash_is_reported_and_returns_an_error(self, client, services):
+        services.twilio.send_message.side_effect = RuntimeError("twilio down")
+        client = TestClient(app, raise_server_exceptions=False)
+        response = sms(client, "Hauta-aho - Neuvonen 2-0")
+        assert response.status_code == 500 and response.json() == {"detail": "Internal server error"}
+        assert "twilio down" in services.pushover.send_notification.await_args.kwargs["message"]
+
+
+class TestApi:
+    path = "/api/v2"
+
+    def test_list_unplayed(self, client):
+        data = client.get(f"{self.path}/matches?unplayed=true").json()
+        assert data["round"] == 2 and len(data["matches"]) == 4
+        assert all(m["state"] == "unplayed" for m in data["matches"])
+
+    def test_post_scores_and_get(self, client, services):
+        m = find(services.league, "Nurmi Jani", "Lundgren Mikko")
+        body = {"player1_score": 2, "player2_score": 1, "breaks": [{"player": "player1", "points": 50}]}
+        response = client.post(f"{self.path}/scores/{m.match_id}", json=body)
         assert response.status_code == 201
-        assert target_fixture["player1"] == data["player1"]
-        assert target_fixture["player2"] == data["player2"]
-        assert data["highest_break"] == 50
-        assert data["highest_break_player"] == target_fixture["player1"]
+        posted = response.json()
+        assert posted["winner"] == m.player1.name and posted["highest_break"] == 50
 
-    def test_post_scores_with_invalid_breaks_raises(self, prepared_sheet, test_client):
-        """Test for posting scores to a match with invalid breaks"""
-        if self.fixtures is None:
-            self.test_get_all_unplayed_matches(prepared_sheet, test_client)
-        target_fixture = self.fixtures[2]
-        match_id = target_fixture["id"]
+        response = client.post(f"{self.path}/scores/{m.match_id}", json=body)
+        assert response.status_code == 409 and response.json()["detail"] == "Match already completed"
 
-        # wrong player
-        response = test_client.post(
-            f"{self.path}/scores/{match_id}",
-            json={
-                "player1_score": 2,
-                "player2_score": 1,
-                "breaks": [
-                    {"player": "Trump Donald", "points": 100},
-                ],
-            },
-        )
-        assert response.status_code == 422
-        assert "detail" in response.json()
+        got = client.get(f"{self.path}/matches/{m.match_id}").json()
+        assert got["winner"] == posted["winner"] and got["outcome"]["player1_score"] == 2
 
-        # too many points
-        player1_name = target_fixture["player1"]
-        response = test_client.post(
-            f"{self.path}/scores/{match_id}",
-            json={
-                "player1_score": 2,
-                "player2_score": 1,
-                "breaks": [
-                    {"player": player1_name, "score": 167},
-                ],
-            },
-        )
-        assert response.status_code == 422
-        assert "detail" in response.json()
+    def test_invalid_breaks(self, client, services):
+        m = find(services.league, "Nurmi Jani", "Lundgren Mikko")
+        for brk in [{"player": "Trump Donald", "points": 100}, {"player": "player1", "score": 167}]:
+            body = {"player1_score": 2, "player2_score": 1, "breaks": [brk]}
+            assert client.post(f"{self.path}/scores/{m.match_id}", json=body).status_code == 422
+
+    def test_scoreline_not_fitting_the_format_is_a_400(self, client, services):
+        m = find(services.league, "Nurmi Jani", "Lundgren Mikko")
+        client_no_raise = TestClient(app, raise_server_exceptions=False)
+        client_no_raise.auth = client.auth
+        body = {"player1_score": 3, "player2_score": 0, "breaks": []}
+        response = client_no_raise.post(f"{self.path}/scores/{m.match_id}", json=body)
+        assert response.status_code == 400
+        assert "does not match the match format" in response.json()["detail"][0]
+
+    def test_auth_required(self, client):
+        client.auth = None
+        assert client.get(f"{self.path}/matches").status_code == 401
+        client.auth = HTTPBasicAuth(username="", password="wrong")
+        assert client.get(f"{self.path}/matches").status_code == 401
+
+    def test_legacy_v1_header_auth(self, client):
+        client.auth = None
+        assert client.get("/api/v1/matches", headers={"Authorization": API_SECRET}).status_code == 200
+        assert client.get("/api/v1/matches", headers={"Authorization": "wrong"}).status_code == 401
+        assert client.get("/api/v1/matches").status_code == 401
+
+    def test_everything_refused_without_a_configured_secret(self, client, services):
+        services.settings.API_SECRET = None
+        client.auth = None
+        assert client.get("/api/v1/matches").status_code == 401  # used to pass: None == None
+        assert client.get(f"{self.path}/matches", auth=HTTPBasicAuth("", "")).status_code == 401
 
 
-class TestApiRoutesUnauthenticated:
-    path = TestApiRoutes.path
+def test_sms_form_needs_body_and_sender(client):
+    assert client.post("/sms/scores", data={"From": "+1234567890"}).status_code == 422
+    assert client.post("/sms/scores", data={"Body": "", "From": "+1234567890"}).status_code == 422
+    # Twilio's other form fields are ignored
+    extra = {"Body": "Hauta-aho - Neuvonen 2-0", "From": "+1", "To": "+358000", "MessageSid": "SM1", "NumMedia": "0"}
+    assert client.post("/sms/scores", data=extra).status_code == 201
 
-    def test_get_matches_no_auth(self, test_client):
-        """Test for posting scores without authentication"""
-        # get matches
-        test_client.auth = None
-        response = test_client.get(f"{self.path}/matches")
-        assert response.status_code == 401
 
-    def test_get_matches_wrong_auth(self, test_client):
-        """Test for posting scores with wrong authentication"""
-        test_client.auth = HTTPBasicAuth(username="", password="wrong")
-        response = test_client.get(f"{self.path}/matches")
-        assert response.status_code == 401
+class TestTwilioSignature:
+    TOKEN = "twilio-auth-token"
+    FORM = {"Body": "Hauta-aho - Neuvonen 2-0", "From": "+1234567890"}
+
+    @pytest.fixture
+    def signed_client(self, client, services):
+        from twilio.request_validator import RequestValidator
+
+        self.validator = RequestValidator(self.TOKEN)
+        services.twilio.is_valid_request = self.validator.validate  # real check instead of the mock
+        return client
+
+    def post(self, client, signature, form=None, headers=None):
+        headers = {"X-Twilio-Signature": signature, **(headers or {})}
+        return client.post("/sms/scores", data=form or self.FORM, headers=headers)
+
+    def test_signed_request_is_accepted(self, signed_client):
+        signature = self.validator.compute_signature("http://testserver/sms/scores", self.FORM)
+        assert self.post(signed_client, signature).status_code == 201
+
+    def test_https_url_behind_cloud_run_proxy(self, signed_client):
+        signature = self.validator.compute_signature("https://testserver/sms/scores", self.FORM)
+        assert self.post(signed_client, signature, headers={"X-Forwarded-Proto": "https"}).status_code == 201
+
+    def test_forged_or_tampered_requests_are_rejected(self, signed_client, services):
+        assert self.post(signed_client, "").status_code == 403
+        signature = self.validator.compute_signature("http://testserver/sms/scores", self.FORM)
+        tampered = {**self.FORM, "Body": "Hauta-aho - Neuvonen 0-2"}
+        assert self.post(signed_client, signature, form=tampered).status_code == 403
+        assert services.league.matches(status="completed") == []
+        services.twilio.send_message.assert_not_called()
+
+    def test_check_can_be_turned_off(self, signed_client, services):
+        services.settings.VERIFY_TWILIO_SIGNATURE = False
+        assert self.post(signed_client, "").status_code == 201

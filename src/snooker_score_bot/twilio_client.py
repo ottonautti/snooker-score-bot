@@ -1,29 +1,20 @@
 import logging
 import os
-from collections import namedtuple
 
-from fastapi import HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 
-from snooker_score_bot.errors import InvalidContentType
 from snooker_score_bot.settings import Settings
 
-TwilioInboundMessage = namedtuple("TwilioInboundMessage", ["body", "sender", "is_test"])
 
+class TwilioSms(BaseModel):
+    """Form fields of Twilio's incoming-message webhook that the bot uses. Twilio sends more; they are ignored."""
 
-async def parse_twilio_msg(req: Request) -> TwilioInboundMessage:
-    """Returns inbound Twilio message details from request form data"""
-    # expect application/x-www-form-urlencoded
-    if req.headers["Content-Type"] != "application/x-www-form-urlencoded":
-        raise InvalidContentType()
-    form_data = await req.form()
-    body = form_data.get("Body")
-    sender = form_data.get("From")
-    # set is_test to True if the message contains TEST
-    is_test = bool(body and "TEST" in body)
-    if not body or not sender:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid Twilio message")
-    return TwilioInboundMessage(body=body, sender=sender, is_test=is_test)
+    model_config = ConfigDict(populate_by_name=True)
+
+    body: str = Field(alias="Body", min_length=1)
+    sender: str = Field(alias="From", min_length=1)
 
 
 class Twilio:
@@ -33,6 +24,7 @@ class Twilio:
         if not account_sid or not auth_token or not from_number:
             raise ValueError("Missing Twilio credentials")
         self.client = Client(account_sid, auth_token)
+        self.validator = RequestValidator(auth_token)
         self.from_number = from_number
         if self.skip_send:
             self.client.messages.create = self._skip_send_message
@@ -40,6 +32,11 @@ class Twilio:
     def _skip_send_message(self, *args, **kwargs):
         logging.warning("Twilio send is skipped.")
         return None
+
+    def is_valid_request(self, url: str, params: dict, signature: str) -> bool:
+        """Whether a webhook request really comes from Twilio: its X-Twilio-Signature header signs the URL and form
+        fields with the account's auth token. https://www.twilio.com/docs/usage/webhooks/webhooks-security"""
+        return self.validator.validate(url, params, signature)
 
     def send_message(self, to: str, body: str):
         """Sends a message via Twilio"""
