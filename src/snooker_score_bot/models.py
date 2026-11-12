@@ -1,13 +1,12 @@
 import datetime
 import uuid
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Literal, Optional, Union
 
 from jinja2 import Template
 from pydantic import BaseModel, computed_field, field_validator, model_serializer, model_validator
 from pydantic.fields import Field, PrivateAttr
 from pydantic_core import PydanticCustomError
-from typing import Literal
 
 
 class BreakRequest(BaseModel):
@@ -59,12 +58,6 @@ class SnookerBreak(BaseModel):
     player: SnookerPlayer
     points: int = Field(gt=0, le=147)
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SnookerBreak":
-        """Create a SnookerBreak object from JSON data."""
-        player = SnookerPlayer(name=data.pop("player"))
-        return cls(player=player, **data)
-
 
 class MatchFormat(BaseModel):
     best_of: int
@@ -98,6 +91,13 @@ class MatchOutcome(BaseModel):
         return sorted(breaks, key=lambda b: b.points, reverse=True)
 
 
+def _with_format_model(data: dict) -> dict:
+    """model_construct skips validation, so convert a format given as a dict here."""
+    if isinstance(data.get("format"), dict):
+        data = {**data, "format": MatchFormat(**data["format"])}
+    return data
+
+
 class MatchFixture(BaseModel):
     """Match fixture i.e. an unplayed match between two players of a group"""
 
@@ -106,7 +106,7 @@ class MatchFixture(BaseModel):
     group: str
     player1: SnookerPlayer
     player2: SnookerPlayer
-    format: MatchFormat = Field(default=MatchFormats.LEAGUE.value)
+    format: MatchFormat = Field(default_factory=lambda: MatchFormat(**MatchFormats.LEAGUE.value))
 
     @property
     def match_id(self) -> str:
@@ -144,6 +144,7 @@ class MatchFixture(BaseModel):
         """Create a match fixture from player names, provisioning a match ID.
 
         Validates the model before returning."""
+        kwargs = _with_format_model(kwargs)
         instance = cls.model_construct(
             player1=SnookerPlayer(name=player1, group=group),
             player2=SnookerPlayer(name=player2, group=group),
@@ -158,7 +159,7 @@ class MatchFixture(BaseModel):
 
         Validates the model before returning."""
 
-        instance = cls.model_construct(_match_id=match_id, **data)
+        instance = cls.model_construct(_match_id=match_id, **_with_format_model(data))
         return cls.model_validate(instance)
 
 
@@ -187,7 +188,7 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
         return self
 
     @computed_field
-    def winner(self) -> str:
+    def winner(self) -> Optional[SnookerPlayer]:
         """Returns the winner of the match."""
         if not self.outcome:
             return None
@@ -265,29 +266,34 @@ class SnookerMatch(MatchFixture, validate_assignment=True):
             summary += f"\n\nLeague standings: {link}"
         return summary
 
-    def reverse_players(self) -> None:
-        """Reverses the players and scores in the match.
-
-        Need to use __setattr__ in order to avoid tripping validations."""
-        p1 = self.player1
-        object.__setattr__(self, "player1", self.player2)
-        object.__setattr__(self, "player2", p1)
-        if self.outcome:
-            s1 = self.outcome.player1_score
-            object.__setattr__(self.outcome, "player1_score", self.outcome.player2_score)
-            object.__setattr__(self.outcome, "player2_score", s1)
-
 
 class SnookerMatchList(BaseModel):
     round: int
     matches: list[SnookerMatch] = []
 
 
+class MentionedPlayer(BaseModel):
+    """Who a person mentioned in a message could be: every matching player in the list, by exact full name."""
+
+    options: list[str] = Field(default_factory=list)
+
+
+class BreakReading(BaseModel):
+    """A break in a message: by the first (1) or second (2) person mentioned."""
+
+    player: int
+    points: int
+
+
 class InferredMatch(BaseModel):
-    group: str
-    player1: str
-    player2: str
-    player1_score: int
-    player2_score: int
-    winner: str
-    breaks: Optional[list[dict]] = Field(default_factory=list)
+    """The LLM's reading of a score message: the two people mentioned, in order, and the frames each won."""
+
+    players: list[MentionedPlayer] = Field(default_factory=list)
+    player1_score: Optional[int] = None
+    player2_score: Optional[int] = None
+    breaks: list[BreakReading] = Field(default_factory=list)
+
+    @field_validator("players", "breaks", mode="before")
+    @classmethod
+    def none_as_empty(cls, value):
+        return value or []
