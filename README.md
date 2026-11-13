@@ -60,7 +60,7 @@ snooker [--league prod|test|sixred] [--json] ...
   players list    [--group L7]
   matches list    [--round N | --all-rounds] [--group L7] [--status unplayed|completed]
   matches show    MATCH_ID                  with the breaks recorded with its result
-  results record  MATCH_ID --score 0-2 [--winner Jani] [--break Jani:45]... [--date] [--log] [--overwrite]
+  results record  MATCH_ID --score 0-2 [--winner Jani] [--break Jani:45]... [--date] [--log] [--overwrite] [--walkover]
   results clear   MATCH_ID [--with-breaks]
   breaks list     [--round N | --all-rounds] [--player NAME]
   breaks add      --player NAME --points 45 [--date] [--round]
@@ -75,6 +75,7 @@ snooker [--league prod|test|sixred] [--json] ...
 - `MATCH_ID` can be a unique prefix of 6+ characters, as shown by `matches list`.
 - `results record` takes the score in the match's player order (player1-player2). Pass `--winner` to have it
   refuse a score that makes someone else the winner.
+- `results record --walkover` marks a walkover (luovutusvoitto, "luovari"): it sets the `walkover?` column to 1.
 - `--json` prints machine-readable output. Exit codes: 0 ok, 1 error, 2 invalid input, 3 not found,
   4 refused (already played, ambiguous, sheet changed meanwhile, not allowed for the league).
 - Needs Google credentials, e.g. `GOOGLE_APPLICATION_CREDENTIALS=service-account.json`. `sms parse` also calls

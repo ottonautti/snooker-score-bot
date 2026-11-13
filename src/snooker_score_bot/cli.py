@@ -338,9 +338,10 @@ def results_group():
 @click.option("--date", "-d", "played_on", type=click.DateTime(["%Y-%m-%d"]), help="Date played (default: today).")
 @click.option("--log", default="", help="Text stored in the log column, e.g. the original SMS.")
 @click.option("--overwrite", is_flag=True, help="Replace an existing result (its breaks are kept).")
+@click.option("--walkover", is_flag=True, help="Mark the result as a walkover (luovutusvoitto): walkover? = 1.")
 @dry_run_option
 @pass_state
-def results_record(state: State, match_id, score, winner, breaks, played_on, log, overwrite, dry_run):
+def results_record(state: State, match_id, score, winner, breaks, played_on, log, overwrite, walkover, dry_run):
     """Record the result of a match. MATCH_ID may be a unique prefix (6+ characters)."""
     league = state.league
     match = league.match(match_id)
@@ -363,6 +364,7 @@ def results_record(state: State, match_id, score, winner, breaks, played_on, log
         log=log,
         overwrite=overwrite,
         dry_run=dry_run,
+        walkover=walkover,
     )
     write_result(state, match, changes, dry_run)
 

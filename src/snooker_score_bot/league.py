@@ -5,7 +5,7 @@ This is the single place that reads and writes league data. The SMS handler, the
 
 Sheet layout:
 * `_matches`: one row per match. Columns are looked up by header; result columns are date, player1_score,
-  player2_score, winner and log.
+  player2_score, winner and log, plus walkover? ("1" for a walkover) where the sheet has that column.
 * `_breaks`: one row per break: timestamp, from, passage, player, break, date, round. Breaks are not linked to a
   match id; they are associated with a match by player, round and date.
 * `nr_currentPlayers`: named range of players and their groups (column order per settings).
@@ -36,6 +36,7 @@ PLAYERS_RANGE = "nr_currentPlayers"
 ROUNDS_RANGE = "nr_rounds"
 MIN_ID_PREFIX = 6
 RESULT_FIELDS = ("date", "player1_score", "player2_score", "winner", "log")
+WALKOVER = "walkover?"
 SHEETS_DATE_FORMAT = "%d.%m.%Y"
 EXCEL_EPOCH = date(1899, 12, 30)
 TIMEZONE = pytz.timezone("Europe/Helsinki")
@@ -131,6 +132,11 @@ class _Table:
 
     def col(self, header: str) -> int:
         return self.headers.index(header) + 1
+
+    @property
+    def result_fields(self) -> tuple[str, ...]:
+        """The result columns of _matches; walkover? only if the sheet has it."""
+        return RESULT_FIELDS + ((WALKOVER,) if WALKOVER in self.headers else ())
 
 
 class League:
@@ -302,17 +308,20 @@ class League:
         log: str = "",
         overwrite: bool = False,
         dry_run: bool = False,
+        walkover: bool = False,
     ) -> tuple[SnookerMatch, list[Change]]:
         """Record the result of a match. Scores are in the order of the match's player1 and player2.
 
-        Refuses to replace an existing result unless overwrite is set. Breaks of a replaced result are kept;
-        remove them with clear_result first if they are wrong."""
+        A walkover is marked with "1" in the walkover? column. Refuses to replace an existing result unless
+        overwrite is set. Breaks of a replaced result are kept; remove them with clear_result first if they are
+        wrong."""
         table, row, record = self._find_row(match_id)
         scores = (player1_score, player2_score)
-        return self._record_row(table, row, record, *scores, breaks, date, log, overwrite, dry_run)
+        return self._record_row(table, row, record, *scores, breaks, date, log, overwrite, dry_run, walkover)
 
     def _record_row(
-        self, table, row, record, player1_score, player2_score, breaks, date, log, overwrite, dry_run
+        self, table, row, record, player1_score, player2_score, breaks, date, log, overwrite, dry_run,
+        walkover=False,
     ) -> tuple[SnookerMatch, list[Change]]:
         """Write a result into a _matches row.
 
@@ -320,6 +329,8 @@ class League:
         """
         if record.get("winner") and not overwrite:
             raise MatchAlreadyCompleted()
+        if walkover and WALKOVER not in table.headers:
+            raise ValueError(f"_matches has no {WALKOVER} column")
         match = self._to_match(record)
         played_on = date or today()
         outcome = MatchOutcome(
@@ -345,11 +356,13 @@ class League:
             "winner": match.winner.name,
             "log": log,
         }
+        if WALKOVER in table.headers:
+            after[WALKOVER] = 1 if walkover else ""
         change = Change(
             action="update",
             tab=MATCHES,
             row=row,
-            before={k: record.get(k, "") for k in RESULT_FIELDS},
+            before={k: record.get(k, "") for k in table.result_fields},
             after={k: str(v) for k, v in after.items()},
         )
         def write_result():
@@ -469,15 +482,15 @@ class League:
             action="update",
             tab=MATCHES,
             row=row,
-            before={k: record.get(k, "") for k in RESULT_FIELDS},
-            after={k: "" for k in RESULT_FIELDS},
+            before={k: record.get(k, "") for k in table.result_fields},
+            after={k: "" for k in table.result_fields},
         )
         changes = [change]
         if remove_breaks:
             for b in sorted(self.related_breaks(match), key=lambda b: b.row, reverse=True):
                 changes.append(self.remove_break(b.row, b.player, b.points, dry_run=dry_run))
         if not dry_run:
-            self.backend.update_cells(MATCHES, row, {table.col(k): "" for k in RESULT_FIELDS})
+            self.backend.update_cells(MATCHES, row, {table.col(k): "" for k in table.result_fields})
             change.applied = True
         return (self.match(record["id"]) if not dry_run else match), changes
 

@@ -175,3 +175,22 @@ def test_sms_parse_is_a_dry_run(run, league, monkeypatch):
     monkeypatch.setattr("snooker_score_bot.cli.make_llm", lambda settings: janis_and_mikkos)
     error = run_json(run, "sms", "parse", "Jani - Mikko 2-0")["error"]
     assert error["type"] == "AmbiguousPlayersError" and "Lundgren Mikko (L3)" in error["detail"]
+
+
+def test_record_walkover_sets_flag_and_clear_resets_it(run, league):
+    m = find(league, "Lundgren Mikko", "Nurmi Jani")
+    data = run_json(run, "results", "record", m.match_id, "-s", "2-0", "--walkover", "--log", "W.O.")
+    assert data["changes"][0]["after"]["walkover?"] == "1"
+    table, rows = league.read_matches()
+    assert next(r for _, r in rows if r["id"] == m.match_id)["walkover?"] == "1"
+
+    cleared = run_json(run, "results", "clear", m.match_id)
+    assert cleared["changes"][0]["before"]["walkover?"] == "1"
+    _, rows = league.read_matches()
+    assert next(r for _, r in rows if r["id"] == m.match_id)["walkover?"] == ""
+
+
+def test_record_without_walkover_leaves_flag_empty(run, league):
+    m = find(league, "Lundgren Mikko", "Nurmi Jani")
+    data = run_json(run, "results", "record", m.match_id, "-s", "2-1")
+    assert data["changes"][0]["after"]["walkover?"] == ""
