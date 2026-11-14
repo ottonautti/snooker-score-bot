@@ -8,5 +8,7 @@ service-account.json
 app/llm/fewshots_groove.py
 notes.md
 deploy.sh
-.env__pycache__/
+.env
+__pycache__/
 *.pyc
+.coverage
