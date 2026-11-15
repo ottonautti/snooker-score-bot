@@ -67,6 +67,16 @@ def test_ambiguous_reply_keeps_mention_order():
     assert "Neuvonen Mikko - Hauta-aho Jani (L7)" in exc.value.reply.splitlines()
 
 
+def test_ambiguous_reply_example_uses_full_names():
+    """Regression: for "Räsänen - nurmi 2-0" the reply suggested resending "Räsänen - Nurmi 2-0", which is just as
+    ambiguous when two players share the surname."""
+    players = PLAYERS + [P(name="Räsänen Pasi", group="L3"), P(name="Räsänen Pete", group="L3")]
+    round_pairs = ROUND | {frozenset(("Räsänen Pasi", "Nurmi Jani")), frozenset(("Räsänen Pete", "Nurmi Jani"))}
+    with pytest.raises(AmbiguousPlayersError) as exc:
+        resolve_match(reading(["Räsänen Pasi", "Räsänen Pete"], ["Nurmi Jani"]), players, round_pairs)
+    assert exc.value.reply.endswith('send the result again with full names, e.g. "Räsänen Pasi - Nurmi Jani 2-0".')
+
+
 def test_any_same_group_pair_without_prepared_fixtures():
     pair = resolve_match(reading(["Nikula Jani"], ["Bäck Mikko"]), PLAYERS, round_pairs=None)
     assert names(pair) == ("Nikula Jani", "Bäck Mikko")

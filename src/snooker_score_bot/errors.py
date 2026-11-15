@@ -56,10 +56,9 @@ class AmbiguousPlayersError(SmsReplyError):
         score = f" {scoreline[0]}-{scoreline[1]}" if scoreline else ""
         options = "\n".join(f"{a} - {b} ({a.group})" for a, b in candidates)
         a, b = candidates[0]
-        surname = lambda p: p.name.split()[0]  # noqa: E731
         self.reply = (
             f"Nothing was recorded. Your message fits more than one match:\n\n{options}\n\n"
-            f"Please send the full result again with surnames, e.g. \"{surname(a)} - {surname(b)}{score or ' 2-0'}\"."
+            f"Please send the result again with full names, e.g. \"{a.name} - {b.name}{score or ' 2-0'}\"."
         )
         super().__init__(detail=self.reply)
 
