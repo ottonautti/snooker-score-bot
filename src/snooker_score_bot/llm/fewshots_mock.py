@@ -2,12 +2,13 @@ import json
 from functools import partial
 
 from ..models import SnookerPlayer
-from . import FewShotData
 
 to_json = partial(json.dumps, ensure_ascii=False)
 
 
-class MockFewShotData(FewShotData):
+class MockFewShotData:
+    """Few-shot examples for the prompt, with made-up players."""
+
     players = [
         SnookerPlayer(name="Huhtala Katja", group="L1"),
         SnookerPlayer(name="Andersson Leila", group="L1"),

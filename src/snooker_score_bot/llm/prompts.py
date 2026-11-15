@@ -1,16 +1,8 @@
 """Prompt with instructions and few-shot examples."""
 
-import logging
+from .fewshots_mock import MockFewShotData
 
-try:
-    from . import fewshots_groove
-
-    few_shot_data = fewshots_groove.GrooveFewShotData()
-except ImportError:
-    logging.warning("Could not import real player names, using fake few-shot data instead.")
-    from . import fewshots_mock
-
-    few_shot_data = fewshots_mock.MockFewShotData()
+few_shot_data = MockFewShotData()
 
 INSTRUCTIONS = """\
 The passage is a text message reporting the result of a snooker match between two players: the frames each

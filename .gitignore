@@ -5,7 +5,6 @@ local-only/
 .python-version
 
 service-account.json
-app/llm/fewshots_groove.py
 notes.md
 deploy.sh
 .env
